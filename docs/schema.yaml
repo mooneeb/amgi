@@ -1,0 +1,530 @@
+# AMGI Configuration Schema
+# Defines keys, types, and expected values. No example values.
+# See docs/schema-README.md for usage and Marvin title operators.
+#
+# Field requirements (required vs optional):
+#   version                              required
+#   filters                              optional
+#   filters.issues                       optional
+#   filters.pull_requests                 optional
+#   webhook_server                        optional (required when any org uses webhook mode)
+#   webhook_server.port                   optional (default 8080)
+#   webhook_server.path                   optional (default /webhooks/github)
+#   github                                required
+#   github.organizations                  required
+#   github.organizations[].name           required
+#   github.organizations[].mode           required
+#   github.organizations[].repositories   required
+#   github.organizations[].polling_interval_seconds   optional (required when mode is polling)
+#   github.organizations[].actions                   optional (webhook only; ignored when mode is polling)
+#   github.organizations[].actions.issues             optional
+#   github.organizations[].actions.pull_requests      optional
+#   github.organizations[].marvin_config_id           required
+#   github.organizations[].repositories[]             string or object
+#   repository.name                      required (when repository is object)
+#   repository.marvin_config_id          optional
+#   repository.actions                   optional (webhook only; overrides org actions)
+#   repository.actions.issues             optional
+#   repository.actions.pull_requests     optional
+#   repository.filters                   optional
+#   marvin                               required
+#   marvin.configs                       required (array; at least one config)
+#   marvin.configs[].id                  required (config ID; referenced by marvin_config_id)
+#   marvin.configs[].list_id             optional
+#   marvin.configs[].list_name          optional
+#   marvin.configs[].label_ids           optional
+#   marvin.configs[].label_names         optional
+#   marvin.configs[].auto_complete       optional (default true)
+#   marvin.configs[].task                required
+#   marvin.configs[].task.title_template required
+#   marvin.configs[].task.note_template   required
+#   marvin.configs[].task.day            optional
+#   marvin.configs[].task.due_date       optional
+#   marvin.configs[].task.start_date     optional
+#   marvin.configs[].task.end_date       optional
+#   marvin.configs[].task.planned_week   optional
+#   marvin.configs[].task.planned_month  optional
+#   marvin.configs[].task.time_estimate_ms optional
+#   marvin.configs[].task.priority       optional
+#   marvin.configs[].task.frog           optional
+#   marvin.configs[].task.is_reward      optional
+#   marvin.configs[].task.reward_points  optional
+#   marvin.configs[].task.section        optional
+#   marvin.configs[].task.review_date    optional
+#
+# Required env (not in config): GITHUB_TOKEN, MARVIN_API_TOKEN; webhook secret if using webhooks.
+
+version:
+  type: string
+  required: true
+  description: Schema version identifier. Must be "1".
+
+filters:
+  optional: true
+  type: object
+  description: |
+    Global filter rules for which GitHub issues and pull requests create Marvin tasks.
+    Applied to any repo that does not define its own filters under github.organizations[].repositories[].
+    All specified conditions are ANDed (within and across fields).
+    Operators per field (Kubernetes inspired): in, notIn, exists, doesNotExist.
+  properties:
+    issues:
+      type: object
+      description: Filter rules for GitHub issues.
+      properties:
+        labels:
+          type: object
+          description: Filter by issue labels. Keys are operator names; values are lists of label names (strings).
+          properties:
+            in:
+              type: array
+              items:
+                type: string
+              description: Label must be in this list.
+            notIn:
+              type: array
+              items:
+                type: string
+              description: Label must not be in this list.
+            exists:
+              type: boolean
+              description: At least one label must exist (true) or no labels (false).
+            doesNotExist:
+              type: boolean
+              description: No labels (true) or at least one label (false).
+        assignees:
+          type: object
+          description: Filter by assignee login(s). Keys are operator names; values are lists of GitHub usernames.
+          properties:
+            in:
+              type: array
+              items:
+                type: string
+              description: Assignee login must be in this list.
+            notIn:
+              type: array
+              items:
+                type: string
+              description: Assignee login must not be in this list.
+            exists:
+              type: boolean
+              description: At least one assignee must exist (true) or no assignees (false).
+            doesNotExist:
+              type: boolean
+              description: No assignees (true) or at least one assignee (false).
+        author:
+          type: object
+          description: Filter by issue author (creator) login. Keys are operator names; values as above.
+          properties:
+            in:
+              type: array
+              items:
+                type: string
+              description: Author login must be in this list.
+            notIn:
+              type: array
+              items:
+                type: string
+              description: Author login must not be in this list.
+            exists:
+              type: boolean
+              description: Author must exist (true) or no author filter (false).
+            doesNotExist:
+              type: boolean
+              description: No author (true) or author exists (false).
+        title:
+          type: object
+          description: Filter by issue title. Values in in/notIn are regex patterns (strings).
+          properties:
+            in:
+              type: array
+              items:
+                type: string
+              description: Title must match one of these regex patterns.
+            notIn:
+              type: array
+              items:
+                type: string
+              description: Title must not match any of these regex patterns.
+            exists:
+              type: boolean
+              description: Title filter exists (true) or no title filter (false).
+            doesNotExist:
+              type: boolean
+              description: No title filter (true) or title filter exists (false).
+    pull_requests:
+      type: object
+      description: Filter rules for GitHub pull requests.
+      properties:
+        labels:
+          type: object
+          description: Same structure as filters.issues.labels.
+          properties:
+            in:
+              type: array
+              items:
+                type: string
+              description: Label must be in this list.
+            notIn:
+              type: array
+              items:
+                type: string
+              description: Label must not be in this list.
+            exists:
+              type: boolean
+              description: At least one label must exist (true) or no labels (false).
+            doesNotExist:
+              type: boolean
+              description: No labels (true) or at least one label (false).
+        branches:
+          type: object
+          description: Filter by branch name(s). Values in in/notIn are branch names or patterns.
+          properties:
+            in:
+              type: array
+              items:
+                type: string
+              description: Branch name must be in this list.
+            notIn:
+              type: array
+              items:
+                type: string
+              description: Branch name must not be in this list.
+            exists:
+              type: boolean
+              description: At least one branch condition exists (true) or no branch conditions (false).
+            doesNotExist:
+              type: boolean
+              description: No branch conditions (true) or branch conditions exist (false).
+        reviewers:
+          type: object
+          description: Filter by reviewer login(s).
+          properties:
+            in:
+              type: array
+              items:
+                type: string
+              description: Reviewer login must be in this list.
+            notIn:
+              type: array
+              items:
+                type: string
+              description: Reviewer login must not be in this list.
+            exists:
+              type: boolean
+              description: At least one reviewer must exist (true) or no reviewers (false).
+            doesNotExist:
+              type: boolean
+              description: No reviewers (true) or at least one reviewer (false).
+        assignees:
+          type: object
+          description: Same structure as filters.issues.assignees.
+          properties:
+            in:
+              type: array
+              items:
+                type: string
+              description: Assignee login must be in this list.
+            notIn:
+              type: array
+              items:
+                type: string
+              description: Assignee login must not be in this list.
+            exists:
+              type: boolean
+              description: At least one assignee must exist (true) or no assignees (false).
+            doesNotExist:
+              type: boolean
+              description: No assignees (true) or at least one assignee (false).
+        author:
+          type: object
+          description: Filter by PR author (creator) login.
+          properties:
+            in:
+              type: array
+              items:
+                type: string
+              description: Author login must be in this list.
+            notIn:
+              type: array
+              items:
+                type: string
+              description: Author login must not be in this list.
+            exists:
+              type: boolean
+              description: Author must exist (true) or no author filter (false).
+            doesNotExist:
+              type: boolean
+              description: No author (true) or author exists (false).
+        title:
+          type: object
+          description: Filter by PR title. Values in in/notIn are regex patterns.
+          properties:
+            in:
+              type: array
+              items:
+                type: string
+              description: Title must match one of these regex patterns.
+            notIn:
+              type: array
+              items:
+                type: string
+              description: Title must not match any of these regex patterns.
+            exists:
+              type: boolean
+              description: Title filter exists (true) or no title filter (false).
+            doesNotExist:
+              type: boolean
+              description: No title filter (true) or title filter exists (false).
+
+webhook_server:
+  type: object
+  optional: true
+  description: |
+    AMGI's HTTP server config for receiving GitHub webhooks. Required when any
+    organization uses mode webhook. AMGI listens on the configured port and
+    serves the path. The user enters the same path (and port, if non-default)
+    in GitHub's Payload URL. Omit port or path to use defaults.
+  properties:
+    port:
+      type: integer
+      optional: true
+      default: 8080
+      minimum: 1
+      maximum: 65535
+      description: Port for AMGI's HTTP server to listen on. Default 8080.
+    path:
+      type: string
+      optional: true
+      default: "/webhooks/github"
+      description: Path for the webhook endpoint. Must start with /. Must match GitHub's Payload URL. Default /webhooks/github.
+
+github:
+  type: object
+  required: true
+  description: GitHub connection and source configuration.
+  properties:
+    organizations:
+      type: array
+      required: true
+      description: List of GitHub organizations. Webhook and polling are mutually exclusive per organization.
+      items:
+        type: object
+        required:
+          - name
+          - mode
+          - repositories
+          - marvin_config_id
+        properties:
+          name:
+            type: string
+            description: GitHub organization login (e.g. org name).
+          mode:
+            type: string
+            enum:
+              - webhook
+              - polling
+            description: How to receive events for this org. One of webhook (real-time) or polling (periodic).
+          actions:
+            type: object
+            optional: true
+            description: |
+              Webhook only. Which event actions trigger task creation. Ignored when mode is polling.
+              If omitted, defaults apply. See Architecture doc for supported actions.
+            properties:
+              issues:
+                type: array
+                items:
+                  type: string
+                  enum: [opened, assigned]
+                description: Actions for issues. Default when omitted: [opened, assigned].
+              pull_requests:
+                type: array
+                items:
+                  type: string
+                  enum: [review_requested, assigned]
+                description: Actions for pull requests. Default when omitted: [review_requested, assigned].
+          polling_interval_seconds:
+            type: integer
+            minimum: 1
+            description: Required when mode is polling. Interval in seconds between poll runs.
+          marvin_config_id:
+            type: string
+            required: true
+            description: |
+              ID of the Marvin config to use for this organization (references marvin.configs[].id).
+          repositories:
+            type: array
+            description: |
+              Repositories to watch. Each element is either a string (repo name; uses org defaults)
+              or an object with name and optional marvin_config_id, actions, filters (per-repo overrides).
+            items:
+              oneOf:
+                - type: string
+                  description: Repository name. Global filters apply.
+                - type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                      description: Repository name.
+                    marvin_config_id:
+                      type: string
+                      optional: true
+                      description: |
+                        ID of the Marvin config to use for this repository (references marvin.configs[].id).
+                        Overrides organization marvin_config_id. Optional; when omitted, use organization marvin_config_id.
+                    actions:
+                      type: object
+                      optional: true
+                      description: |
+                        Webhook only. Which event actions trigger task creation for this repo. Overrides organization actions.
+                        Ignored when mode is polling. Same structure as organization actions.
+                      properties:
+                        issues:
+                          type: array
+                          items:
+                            type: string
+                            enum: [opened, assigned]
+                          description: Actions for issues. Overrides organization actions for this repo.
+                        pull_requests:
+                          type: array
+                          items:
+                            type: string
+                            enum: [review_requested, assigned]
+                          description: Actions for pull requests. Overrides organization actions for this repo.
+                    filters:
+                      type: object
+                      optional: true
+                      description: Same shape as top-level filters. Replaces global filters for this repo only.
+                      properties:
+                        issues:
+                          type: object
+                          description: Per-repo filter rules for issues.
+                        pull_requests:
+                          type: object
+                          description: Per-repo filter rules for pull requests.
+
+marvin:
+  type: object
+  required: true
+  description: Marvin destination and task creation settings.
+  properties:
+    configs:
+      type: array
+      required: true
+      description: |
+        List of Marvin configs. Each has an id (required) that is referenced by marvin_config_id in github.
+      items:
+        type: object
+        required:
+          - id
+          - task
+        description: Marvin config. Reference by id from marvin_config_id in github.
+        properties:
+          id:
+            type: string
+            required: true
+            description: Config ID. Referenced by marvin_config_id in github. Must be unique within configs.
+          list_id:
+            type: string
+            optional: true
+            description: |
+              Marvin parent ID: category or project ID, or "unassigned" for Inbox.
+              If both list_id and list_name are set, list_id takes precedence.
+          list_name:
+            type: string
+            optional: true
+            description: |
+              Category or project title; resolved via Marvin API. Exact match including capitalization.
+              Cached. Ignored if list_id is set.
+          label_ids:
+            type: array
+            optional: true
+            items:
+              type: string
+            description: Marvin label IDs to attach to every created task.
+          label_names:
+            type: array
+            optional: true
+            items:
+              type: string
+            description: Marvin label titles (exact match). Resolved to IDs via API; cached.
+          auto_complete:
+            type: boolean
+            optional: true
+            default: true
+            description: |
+              If true, title is sent to Marvin with autocomplete enabled; title may contain Marvin operators;
+              key-value task fields are fallback (title wins). If false, X-Auto-Complete false is sent;
+              only key-value task fields and literal title apply.
+          task:
+            type: object
+            required:
+              - title_template
+              - note_template
+            description: Task content and optional API-backed fields.
+            properties:
+              title_template:
+                type: string
+                description: Go template for task title. When auto_complete is true, may include Marvin operators (see schema-README).
+              note_template:
+                type: string
+                description: Go template for task note (body).
+              day:
+                type: string
+                optional: true
+                description: Schedule date. Format YYYY-MM-DD. Omit or null to not set.
+              due_date:
+                type: string
+                optional: true
+                description: Due date. Format YYYY-MM-DD. Omit or null to not set.
+              start_date:
+                type: string
+                optional: true
+                description: |
+                  Start date. Format YYYY-MM-DD. Not an addTask body field—when auto_complete is true,
+                  AMGI appends it as a title operator; Marvin parses from title. Ignored when auto_complete is false.
+              end_date:
+                type: string
+                optional: true
+                description: |
+                  End date. Format YYYY-MM-DD. Not an addTask body field—when auto_complete is true,
+                  AMGI appends it as a title operator; Marvin parses from title. Ignored when auto_complete is false.
+              planned_week:
+                type: string
+                optional: true
+                description: Monday of planned week. Format YYYY-MM-DD. Omit or null to not set.
+              planned_month:
+                type: string
+                optional: true
+                description: Planned month. Format YYYY-MM. Omit or null to not set.
+              time_estimate_ms:
+                type: integer
+                optional: true
+                description: Duration estimate in milliseconds. Omit or null to not set.
+              priority:
+                type: integer
+                optional: true
+                description: Priority (Marvin isStarred). 0 none, 1 yellow, 2 orange, 3 red. Omit or null to not set.
+              frog:
+                type: integer
+                optional: true
+                description: Frog (Marvin isFrogged). 0 none, 1 normal, 2 baby, 3 monster. Omit or null to not set.
+              is_reward:
+                type: boolean
+                optional: true
+                description: false = normal task (earns kudos). Omit or null to not set.
+              reward_points:
+                type: number
+                optional: true
+                description: Reward points to attach. Omit or null to not set.
+              section:
+                type: string
+                optional: true
+                description: Daily section (Morning, Afternoon, Evening) or custom section ID. Omit or null to not set.
+              review_date:
+                type: string
+                optional: true
+                description: Review date. Format YYYY-MM-DD. Omit or null to not set.
