@@ -1,6 +1,6 @@
 # Amazing Marvin Github Integration Architecture
 
-This document describes in detail the Architecture AMGI syncs GitHub issues and pull requests to Amazing Marvin tasks. This Architecture document reflects the current status of 
+This document describes in detail the Architecture AMGI syncs GitHub issues and pull requests to Amazing Marvin tasks.
 
 ## System overview
 
@@ -81,7 +81,7 @@ flowchart LR
 
 Receives GitHub events and normalizes them into an internal issue/PR representation. Acts as the entry point of the pipeline.
 
-**Inputs:** Webhook HTTP POST requests (with payload) or REST API responses (list issues/PRs). 
+**Inputs:** Webhook HTTP POST requests (with payload) or REST API responses (list issues/PRs).
 
 **Outputs:** Normalized events passed to the filter engine.
 
@@ -91,7 +91,7 @@ Receives GitHub events and normalizes them into an internal issue/PR representat
 
 Decides whether an event should result in a Marvin task based on configuration. Applies filter rules (labels, assignees, author, title, branches, reviewers) using operators `in`, `notIn`, `exists`, and `doesNotExist`. All conditions are ANDed; global and per-repo filters apply.
 
-**Inputs:** Normalized event and filter configuration. 
+**Inputs:** Normalized event and filter configuration.
 
 **Outputs:** Boolean (match or no match). Only matched events proceed to the idempotency check.
 
@@ -101,7 +101,7 @@ Decides whether an event should result in a Marvin task based on configuration. 
 
 Creates tasks in Marvin from matched events. Renders title and note templates from event data, maps to the configured list and labels, and calls the Marvin API (addTask or equivalent).
 
-**Inputs:** Matched event and Marvin config (list, labels, templates). 
+**Inputs:** Matched event and Marvin config (list, labels, templates).
 
 **Outputs:** Marvin task created via API.
 
@@ -111,7 +111,7 @@ Creates tasks in Marvin from matched events. Renders title and note templates fr
 
 Tracks which events have been processed so each event creates at most one Marvin task, even across restarts or duplicate deliveries.
 
-**Inputs:** Event identifier (e.g. repo + issue/PR number). 
+**Inputs:** Event identifier (e.g. repo + issue/PR number).
 
 **Outputs:** Boolean (already processed or not); records new events as processed.
 
@@ -127,20 +127,18 @@ AMGI consumes GitHub **issues** and **pull_request** webhook events and REST API
 
 In webhook mode, only events whose `action` matches the configured list create Marvin tasks. Defaults: for **issues**, `opened` and `assigned`; for **pull requests**, `review_requested` and `assigned`. Actions are configurable per organization; repositories may override.
 
-**Polling**
-
 Polling fetches current state (issues/PRs) from the GitHub API; it does not receive event actions. AMGI only creates tasks for issues/PRs seen for the first time (equivalent to `opened`). The actions config does not apply to polling.
 
 Only the following actions are supported (webhook mode). Any other GitHub actions are ignored.
 
-| Issues | Pull requests |
-|--------|---------------|
-| `opened` | `review_requested` |
-| `assigned` | `assigned` |
+| Issues     | Pull requests      |
+| ---------- | ------------------ |
+| `opened`   | `review_requested` |
+| `assigned` | `assigned`         |
 
 **Issues**
 
-Extracted fields (from webhook payload):
+Extracted fields:
 
 - `repository.full_name`
 - `issue.number`
@@ -155,7 +153,7 @@ Extracted fields (from webhook payload):
 
 **Pull requests**
 
-Extracted fields (structure mirrors issues with `pull_request`; PR webhook adds):
+Extracted fields:
 
 - `repository.full_name`
 - `pull_request.number`
@@ -180,22 +178,22 @@ Filters and templates operate on this representation. Filter rules (labels, assi
 
 **Key fields**
 
-| Field | Type | Description |
-|-------|------|--------------|
-| `org` | string | Organization or owner login (from `repository.full_name`). |
-| `repo` | string | Repository name. |
-| `number` | integer | Issue or PR number. |
-| `type` | string | `issue` or `pull_request`. |
-| `title` | string | Issue/PR title. |
-| `body` | string | Issue/PR body (may be empty). |
-| `state` | string | `open` or `closed`. |
-| `action` | string | Event action; webhook only. Polling treats all as `opened`. |
-| `labels` | []string | Label names. |
-| `assignees` | []string | Assignee logins. |
-| `author` | string | Creator login. |
-| `branch` | string | Target branch (PR only). |
-| `reviewers` | []string | Requested reviewer logins (PR only). |
-| `html_url` | string | GitHub URL to the issue or PR. |
+| Field       | Type     | Description                                                |
+| ----------- | -------- | ---------------------------------------------------------- |
+| `org`       | string   | Organization or owner login (from`repository.full_name`).  |
+| `repo`      | string   | Repository name.                                           |
+| `number`    | integer  | Issue or PR number.                                        |
+| `type`      | string   | `issue` or `pull_request`.                                 |
+| `title`     | string   | Issue/PR title.                                            |
+| `body`      | string   | Issue/PR body (may be empty).                              |
+| `state`     | string   | `open` or `closed`.                                        |
+| `action`    | string   | Event action; webhook only. Polling treats all as`opened`. |
+| `labels`    | []string | Label names.                                               |
+| `assignees` | []string | Assignee logins.                                           |
+| `author`    | string   | Creator login.                                             |
+| `branch`    | string   | Target branch (PR only).                                   |
+| `reviewers` | []string | Requested reviewer logins (PR only).                       |
+| `html_url`  | string   | GitHub URL to the issue or PR.                             |
 
 ### Outbound
 
@@ -209,16 +207,16 @@ The Marvin config (selected by `marvin_config_id` resolution) defines where the 
 
 Config fields map to the addTask API as follows:
 
-| Config | API field / header | Description |
-|--------|--------------------|-------------|
-| `title_template` (rendered) | `title` | Task title. Variables from normalized event (e.g. `{{.Title}}`, `{{.Repo}}`, `{{.Number}}`). |
-| `note_template` (rendered) | `note` | Task body. |
-| `list_id` | `parentId` | Category or project ID; `"unassigned"` for Inbox. |
-| `list_name` | `parentId` | Resolved via GET /api/categories; ignored if `list_id` is set. |
-| `label_ids` | `labelIds` | Label IDs to attach. |
-| `label_names` | `labelIds` | Resolved via GET /api/labels. |
-| `auto_complete` | `X-Auto-Complete` | `true` (default): Marvin parses title operators; `false`: literal title. See [Autocomplete](#autocomplete). |
-| `task.*` | addTask body | Optional task fields (day, due_date, time_estimate_ms, priority, frog, etc.). See schema for config fields and Marvin API for addTask field semantics. |
+| Config                      | API field / header | Description                                                                                                                                            |
+| --------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `title_template` (rendered) | `title`            | Task title. Variables from normalized event (e.g.`{{.Title}}`, `{{.Repo}}`, `{{.Number `).                                                             |
+| `note_template` (rendered)  | `note`             | Task body.                                                                                                                                             |
+| `list_id`                   | `parentId`         | Category or project ID;`"unassigned"` for Inbox.                                                                                                       |
+| `list_name`                 | `parentId`         | Resolved via GET /api/categories; ignored if`list_id` is set.                                                                                          |
+| `label_ids`                 | `labelIds`         | Label IDs to attach.                                                                                                                                   |
+| `label_names`               | `labelIds`         | Resolved via GET /api/labels.                                                                                                                          |
+| `auto_complete`             | `X-Auto-Complete`  | `true` (default): Marvin parses title operators; `false`: literal title. See [Autocomplete](#autocomplete).                                            |
+| `task.*`                    | addTask body       | Optional task fields (day, due_date, time_estimate_ms, priority, frog, etc.). See schema for config fields and Marvin API for addTask field semantics. |
 
 See [Configuration](#configuration) for template syntax and [Integrations](#integrations) for API details.
 
@@ -236,21 +234,21 @@ The config file is YAML. Top-level keys: `version` (required), `filters` (option
 
 When any organization uses `mode: webhook`, AMGI runs an HTTP server to receive webhooks. Configure top-level `webhook_server`. Omit `port` or `path` to use defaults:
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `port` | `8080` | Port AMGI listens on. |
-| `path` | `/webhooks/github` | Path for the webhook endpoint. Must match the path in GitHub's Payload URL. Must start with `/`. |
+| Key    | Default            | Description                                                                                     |
+| ------ | ------------------ | ----------------------------------------------------------------------------------------------- |
+| `port` | `8080`             | Port AMGI listens on.                                                                           |
+| `path` | `/webhooks/github` | Path for the webhook endpoint. Must match the path in GitHub's Payload URL. Must start with`/`. |
 
 ### Filter operators
 
 Filters use four operators (Kubernetes-inspired): `in`, `notIn`, `exists`, `doesNotExist`. All conditions are ANDed within and across fields. Global filters apply to all repos unless a repo defines its own `filters`; per-repo filters replace global for that repo.
 
-| Operator | Semantics | Value type |
-|----------|-----------|------------|
-| `in` | Field value must be in the list | array of strings |
-| `notIn` | Field value must not be in the list | array of strings |
-| `exists` | At least one value must exist (`true`) or no values (`false`) | boolean |
-| `doesNotExist` | No values (`true`) or at least one value (`false`) | boolean |
+| Operator       | Semantics                                                     | Value type       |
+| -------------- | ------------------------------------------------------------- | ---------------- |
+| `in`           | Field value must be in the list                               | array of strings |
+| `notIn`        | Field value must not be in the list                           | array of strings |
+| `exists`       | At least one value must exist (`true`) or no values (`false`) | boolean          |
+| `doesNotExist` | No values (`true`) or at least one value (`false`)            | boolean          |
 
 **Examples**
 
@@ -283,11 +281,11 @@ github:
   organizations:
     - name: acme
       mode: webhook
-      marvin_config_id: issues-config      # default for all repos in this org
+      marvin_config_id: issues-config # default for all repos in this org
       repositories:
-        - bar                              # uses issues-config (org default)
+        - name: bar # uses issues-config (org default)
         - name: foo
-          marvin_config_id: pr-config      # overrides; uses pr-config for foo only
+          marvin_config_id: pr-config # overrides; uses pr-config for foo only
 marvin:
   configs:
     - id: issues-config
@@ -384,7 +382,7 @@ Configurable per organization; repositories may override.
 
 **Lookup**
 
-For an event in org `acme` and repo `foo`: if `foo` is defined as an object with `actions`, use that. Otherwise use the organization's `actions`. When omitted at both levels, defaults apply.
+For an event in org `acme` and repo `foo`: if `foo` is defined as a repository with `actions`, use that. Otherwise use the organization's `actions`. When omitted at both levels, defaults apply.
 
 **Example**
 
@@ -397,10 +395,10 @@ github:
         issues: [opened, assigned]
         pull_requests: [review_requested, assigned]
       repositories:
-        - bar                    # uses org actions
+        - name: bar # uses org actions
         - name: foo
-          actions:               # override for foo only
-            issues: [opened]      # no assigned for this repo
+          actions: # override for foo only
+            issues: [opened] # no assigned for this repo
 ```
 
 ### Example
@@ -430,7 +428,7 @@ github:
         issues: [opened, assigned]
         pull_requests: [review_requested, assigned]
       repositories:
-        - bar
+        - name: bar
         - name: foo
           marvin_config_id: pr-config
           actions:
@@ -531,10 +529,10 @@ GitHub enforces rate limits (e.g. 5,000 requests/hour for authenticated requests
 
 #### Auth
 
-| Purpose | Credential | Source |
-|---------|------------|--------|
-| Webhook signature verification | Webhook secret | Env: `GITHUB_WEBHOOK_SECRET` |
-| Polling API calls | PAT with `repo` or `public_repo` (classic), or Issues + Pull requests read (fine-grained) | Env: `GITHUB_TOKEN` |
+| Purpose                        | Credential                                                                               | Source                      |
+| ------------------------------ | ---------------------------------------------------------------------------------------- | --------------------------- |
+| Webhook signature verification | Webhook secret                                                                           | Env:`GITHUB_WEBHOOK_SECRET` |
+| Polling API calls              | PAT with`repo` or `public_repo` (classic), or Issues + Pull requests read (fine-grained) | Env:`GITHUB_TOKEN`          |
 
 ### Marvin
 
@@ -542,12 +540,12 @@ GitHub enforces rate limits (e.g. 5,000 requests/hour for authenticated requests
 
 Base URL: `https://serv.amazingmarvin.com`. Source: [Marvin API wiki](https://github.com/amazingmarvin/MarvinAPI/wiki).
 
-| Purpose | Endpoint | Method |
-|---------|----------|--------|
-| Create task | `/api/addTask` | POST |
-| Resolve list by name | `/api/categories` | GET |
-| Resolve labels by name | `/api/labels` | GET |
-| Test credentials | `/api/test` | POST |
+| Purpose                | Endpoint          | Method |
+| ---------------------- | ----------------- | ------ |
+| Create task            | `/api/addTask`    | POST   |
+| Resolve list by name   | `/api/categories` | GET    |
+| Resolve labels by name | `/api/labels`     | GET    |
+| Test credentials       | `/api/test`       | POST   |
 
 When config uses `list_name` or `label_names`, AMGI calls `GET /api/categories` and `GET /api/labels` to resolve names to IDs before creating tasks.
 
@@ -603,10 +601,10 @@ See [Rate limit compliance](#rate-limit-compliance) for how AMGI respects these 
 
 **Error responses**
 
-| Status      | Behavior                                      |
-|-------------|-----------------------------------------------|
-| 429 or 5xx  | Retry with exponential backoff (max 3 attempts) |
-| 401 or 400  | No retry; errors are logged                   |
+| Status     | Behavior                                        |
+| ---------- | ----------------------------------------------- |
+| 429 or 5xx | Retry with exponential backoff (max 3 attempts) |
+| 401 or 400 | No retry; errors are logged                     |
 
 See [Error handling strategy](#error-handling-strategy).
 
@@ -614,11 +612,11 @@ See [Error handling strategy](#error-handling-strategy).
 
 #### Retries and backoff
 
-| Condition | Behavior |
-|-----------|----------|
-| 5xx (GitHub or Marvin) | Retry with exponential backoff; max 3 attempts |
-| 429 (rate limit) | Respect `Retry-After` if present; otherwise backoff; max 3 attempts |
-| 401, 400, 404 | No retry; log and fail |
+| Condition              | Behavior                                                           |
+| ---------------------- | ------------------------------------------------------------------ |
+| 5xx (GitHub or Marvin) | Retry with exponential backoff; max 3 attempts                     |
+| 429 (rate limit)       | Respect`Retry-After` if present; otherwise backoff; max 3 attempts |
+| 401, 400, 404          | No retry; log and fail                                             |
 
 #### Rate limit compliance
 
@@ -646,37 +644,37 @@ If Marvin addTask fails after filter match, AMGI retries (up to 3 attempts). If 
 
 ## State and idempotency
 
-*(Where we persist, what we store, how we prevent duplicates.)*
+_(Where we persist, what we store, how we prevent duplicates.)_
 
 - [ ] Store: SQLite (path, single-writer assumption if any)
 - [ ] Schema: main tables and key columns
 
 **github_artifacts**
 
-| Column | Type | Purpose |
-|--------|------|---------|
-| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | Synthetic key; queries mostly use `(org, repo, number)` |
-| `org` | TEXT NOT NULL | Organization or owner |
-| `repo` | TEXT NOT NULL | Repository name |
-| `number` | INTEGER NOT NULL | Issue or PR number |
-| `type` | TEXT NOT NULL | `issue` or `pull_request` |
-| `title` | TEXT | Issue/PR title (for display) |
-| `status` | TEXT NOT NULL | `processed` or `pending_retry` |
-| `detected_on` | TIMESTAMP NOT NULL | When first seen |
-| `updated_at` | TIMESTAMP NOT NULL | When status last changed |
-| `retry_count` | INTEGER DEFAULT 0 | Number of addTask retries (for `pending_retry` rows) |
-| `event_data` | JSON | Serialized event for retry; null when `processed` |
+| Column        | Type                              | Purpose                                                |
+| ------------- | --------------------------------- | ------------------------------------------------------ |
+| `id`          | INTEGER PRIMARY KEY AUTOINCREMENT | Synthetic key; queries mostly use`(org, repo, number)` |
+| `org`         | TEXT NOT NULL                     | Organization or owner                                  |
+| `repo`        | TEXT NOT NULL                     | Repository name                                        |
+| `number`      | INTEGER NOT NULL                  | Issue or PR number                                     |
+| `type`        | TEXT NOT NULL                     | `issue` or `pull_request`                              |
+| `title`       | TEXT                              | Issue/PR title (for display)                           |
+| `status`      | TEXT NOT NULL                     | `processed` or `pending_retry`                         |
+| `detected_on` | TIMESTAMP NOT NULL                | When first seen                                        |
+| `updated_at`  | TIMESTAMP NOT NULL                | When status last changed                               |
+| `retry_count` | INTEGER DEFAULT 0                 | Number of addTask retries (for`pending_retry` rows)    |
+| `event_data`  | JSON                              | Serialized event for retry; null when`processed`       |
 
 `UNIQUE (org, repo, number)` for idempotency. See [Failure behavior](#failure-behavior) for retry flow.
 
 **poll_state**
 
-| Column | Type | Purpose |
-|--------|------|---------|
-| `id` | INTEGER PRIMARY KEY AUTOINCREMENT | Synthetic key; queries use `(org, repo)` |
-| `org` | TEXT NOT NULL | Organization |
-| `repo` | TEXT NOT NULL | Repository |
-| `last_polled_at` | TIMESTAMP NOT NULL | Used as `since` on next poll |
+| Column           | Type                              | Purpose                                 |
+| ---------------- | --------------------------------- | --------------------------------------- |
+| `id`             | INTEGER PRIMARY KEY AUTOINCREMENT | Synthetic key; queries use`(org, repo)` |
+| `org`            | TEXT NOT NULL                     | Organization                            |
+| `repo`           | TEXT NOT NULL                     | Repository                              |
+| `last_polled_at` | TIMESTAMP NOT NULL                | Used as`since` on next poll             |
 
 `UNIQUE (org, repo)`.
 
@@ -700,13 +698,13 @@ Single binary, single container image. One process runs the webhook server and/o
 
 ### Secrets
 
-| Secret | Required when | Purpose |
-|--------|----------------|---------|
-| `GITHUB_TOKEN` | Polling mode | PAT for GitHub API |
-| `GITHUB_WEBHOOK_SECRET` | Webhook mode | Verify webhook signatures |
-| `MARVIN_API_TOKEN` | Always | Create Marvin tasks |
+| Secret                  | Required when | Purpose                   |
+| ----------------------- | ------------- | ------------------------- |
+| `GITHUB_TOKEN`          | Polling mode  | PAT for GitHub API        |
+| `GITHUB_WEBHOOK_SECRET` | Webhook mode  | Verify webhook signatures |
+| `MARVIN_API_TOKEN`      | Always        | Create Marvin tasks       |
 
-Supplied via env vars. AMGI reads from the process environment; operators can use plain env vars, Kubernetes Secrets (mounted as env), or secret managers that inject env vars. 
+Supplied via env vars. AMGI reads from the process environment; operators can use plain env vars, Kubernetes Secrets (mounted as env), or secret managers that inject env vars.
 
 ## Future considerations / out of scope
 

@@ -1,0 +1,352 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/mooneeb/amgi/internal/config/config",
+  "$ref": "#/$defs/Config",
+  "$defs": {
+    "Config": {
+      "properties": {
+        "version": {
+          "type": "string",
+          "enum": [
+            "1"
+          ]
+        },
+        "filters": {
+          "$ref": "#/$defs/Filters"
+        },
+        "webhook_server": {
+          "$ref": "#/$defs/WebhookServer"
+        },
+        "github": {
+          "$ref": "#/$defs/GitHub"
+        },
+        "marvin": {
+          "$ref": "#/$defs/Marvin"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "version",
+        "github",
+        "marvin"
+      ]
+    },
+    "EventActions": {
+      "properties": {
+        "issues": {
+          "items": {
+            "type": "string",
+            "enum": [
+              "opened",
+              "assigned"
+            ]
+          },
+          "type": "array"
+        },
+        "pull_requests": {
+          "items": {
+            "type": "string",
+            "enum": [
+              "review_requested",
+              "assigned"
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "FieldOperators": {
+      "properties": {
+        "in": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "notIn": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "exists": {
+          "type": "boolean"
+        },
+        "doesNotExist": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Filters": {
+      "properties": {
+        "issues": {
+          "$ref": "#/$defs/IssueFilters"
+        },
+        "pull_requests": {
+          "$ref": "#/$defs/PullRequestFilters"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "GitHub": {
+      "properties": {
+        "organizations": {
+          "items": {
+            "$ref": "#/$defs/Organization"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "organizations"
+      ]
+    },
+    "IssueFilters": {
+      "properties": {
+        "labels": {
+          "$ref": "#/$defs/FieldOperators"
+        },
+        "assignees": {
+          "$ref": "#/$defs/FieldOperators"
+        },
+        "author": {
+          "$ref": "#/$defs/FieldOperators"
+        },
+        "title": {
+          "$ref": "#/$defs/FieldOperators"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Marvin": {
+      "properties": {
+        "configs": {
+          "items": {
+            "$ref": "#/$defs/MarvinConfig"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "configs"
+      ]
+    },
+    "MarvinConfig": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "list_id": {
+          "type": "string"
+        },
+        "list_name": {
+          "type": "string"
+        },
+        "label_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "label_names": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "auto_complete": {
+          "type": "boolean",
+          "default": true
+        },
+        "task": {
+          "$ref": "#/$defs/MarvinTask"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "task"
+      ]
+    },
+    "MarvinTask": {
+      "properties": {
+        "title_template": {
+          "type": "string"
+        },
+        "note_template": {
+          "type": "string"
+        },
+        "day": {
+          "type": "string",
+          "format": "date"
+        },
+        "due_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "start_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "end_date": {
+          "type": "string",
+          "format": "date"
+        },
+        "planned_week": {
+          "type": "string",
+          "format": "date"
+        },
+        "planned_month": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}$"
+        },
+        "time_estimate_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "priority": {
+          "type": "integer",
+          "maximum": 3,
+          "minimum": 0
+        },
+        "frog": {
+          "type": "integer",
+          "maximum": 3,
+          "minimum": 0
+        },
+        "is_reward": {
+          "type": "boolean"
+        },
+        "reward_points": {
+          "type": "number"
+        },
+        "section": {
+          "type": "string"
+        },
+        "review_date": {
+          "type": "string",
+          "format": "date"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "title_template",
+        "note_template"
+      ]
+    },
+    "Organization": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "webhook",
+            "polling"
+          ]
+        },
+        "actions": {
+          "$ref": "#/$defs/EventActions"
+        },
+        "polling_interval_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "marvin_config_id": {
+          "type": "string"
+        },
+        "repositories": {
+          "items": {
+            "$ref": "#/$defs/Repository"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "mode",
+        "marvin_config_id",
+        "repositories"
+      ]
+    },
+    "PullRequestFilters": {
+      "properties": {
+        "labels": {
+          "$ref": "#/$defs/FieldOperators"
+        },
+        "branches": {
+          "$ref": "#/$defs/FieldOperators"
+        },
+        "reviewers": {
+          "$ref": "#/$defs/FieldOperators"
+        },
+        "assignees": {
+          "$ref": "#/$defs/FieldOperators"
+        },
+        "author": {
+          "$ref": "#/$defs/FieldOperators"
+        },
+        "title": {
+          "$ref": "#/$defs/FieldOperators"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Repository": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "marvin_config_id": {
+          "type": "string"
+        },
+        "actions": {
+          "$ref": "#/$defs/EventActions"
+        },
+        "filters": {
+          "$ref": "#/$defs/Filters"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name"
+      ]
+    },
+    "WebhookServer": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 1,
+          "default": 8080
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/",
+          "default": "/webhooks/github"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    }
+  },
+  "$comment": "DO NOT MODIFY THIS FILE DIRECTLY. IT IS AUTO-GENERATED BY THE amgi/internal/schema/generate_schema.go."
+}
