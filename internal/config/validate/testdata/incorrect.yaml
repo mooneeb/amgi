@@ -1,0 +1,60 @@
+# INVALID on purpose — do not use as a real config. Violations are called out in comments.
+# Schema: internal/schema/schema.json
+
+# Wrong: version must be exactly "1" (enum), not "2".
+version: "2"
+
+# Wrong: extra top-level key — Config has additionalProperties: false.
+app_name: broken
+
+filters:
+  issues:
+    labels:
+      in:
+        - bug
+  # Wrong: Filters only allows "issues" and "pull_requests" — additionalProperties: false.
+  state: open
+
+github:
+  organizations:
+    - name: my-org
+      # Wrong: must be "webhook" or "polling" only.
+      mode: hybrid
+      actions:
+        issues:
+          # Wrong: only "opened" and "assigned" allowed.
+          - closed
+        pull_requests:
+          - review_requested
+      marvin_config_id: default
+      repositories:
+        - name: core-app
+
+    # Wrong: missing required "repositories" on Organization (and other required fields) — second org incomplete:
+    - name: orphan-org
+
+webhook_server:
+  # Wrong: port must be 1–65535.
+  port: 99999
+  # Wrong: path must match ^/ (leading slash required).
+  path: webhooks/github
+
+marvin:
+  configs:
+    - id: broken-config
+      # Wrong: extra property — MarvinConfig has additionalProperties: false.
+      custom_field: not-allowed
+      task:
+        # Wrong: MarvinTask requires title_template and note_template — both missing.
+        {}
+
+    - id: almost-ok
+      task:
+        title_template: "x"
+        note_template: "y"
+        # Wrong: priority must be 0–3.
+        priority: 10
+        # Wrong: planned_month must match ^[0-9]{4}-[0-9]{2}$ (e.g. not full date).
+        planned_month: "2026-04-15"
+        # Wrong: time_estimate_ms must be integer >= 0, not negative.
+        time_estimate_ms: -1

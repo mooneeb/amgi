@@ -1,0 +1,87 @@
+# Valid AMGI config per internal/schema/schema.json (JSON keys use snake_case).
+version: "1"
+
+filters:
+  issues:
+    labels:
+      in:
+        - bug
+        - enhancement
+    assignees:
+      exists: true
+  pull_requests:
+    branches:
+      notIn:
+        - dependabot
+    title:
+      in:
+        - "^fix:.*"
+
+webhook_server:
+  port: 8080
+  path: /webhooks/github
+
+github:
+  organizations:
+    - name: my-org
+      mode: webhook
+      actions:
+        issues:
+          - opened
+          - assigned
+        pull_requests:
+          - review_requested
+          - assigned
+      marvin_config_id: default
+      repositories:
+        - name: core-app
+        - name: docs-site
+          marvin_config_id: docs
+          actions:
+            issues:
+              - opened
+          filters:
+            issues:
+              author:
+                in:
+                  - dependabot
+
+    - name: another-org
+      mode: polling
+      polling_interval_seconds: 120
+      marvin_config_id: default
+      repositories:
+        - name: legacy
+
+marvin:
+  configs:
+    - id: default
+      list_id: list-abc123
+      label_ids:
+        - lbl-1
+      label_names:
+        - GitHub
+      auto_complete: true
+      task:
+        title_template: "{{.Issue.Title}}"
+        note_template: "{{.Issue.HTMLURL}}"
+        day: "2026-04-09"
+        due_date: "2026-04-15"
+        start_date: "2026-04-10"
+        end_date: "2026-04-20"
+        planned_week: "2026-04-07"
+        planned_month: "2026-04"
+        time_estimate_ms: 3600000
+        priority: 2
+        frog: 1
+        is_reward: false
+        reward_points: 0.5
+        section: Morning
+        review_date: "2026-04-30"
+
+    - id: docs
+      list_name: Documentation
+      auto_complete: false
+      task:
+        title_template: "[docs] {{.Issue.Title}}"
+        note_template: ""

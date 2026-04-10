@@ -17,7 +17,9 @@ func main() {
 	if !ok {
 		log.Fatal("runtime.Caller failed")
 	}
+
 	dir := filepath.Dir(file)
+	parent := filepath.Dir(dir)
 
 	r := jsonschema.Reflector{}
 	c := r.Reflect(config.Config{})
@@ -26,7 +28,7 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
-	err = os.WriteFile(fmt.Sprintf("%s/schema.json", dir), data, 0644)
+	err = os.WriteFile(fmt.Sprintf("%s/schema.json", parent), data, 0644)
 	if err != nil {
 		panic(err.Error())
 	}
