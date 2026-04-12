@@ -164,7 +164,7 @@ Extracted fields:
 - `pull_request.labels[].name`
 - `pull_request.assignees[].login`
 - `pull_request.user.login` (author)
-- `pull_request.base.ref` (target branch)
+- `pull_request.head.ref` (target branch)
 - `pull_request.requested_reviewers[].login`
 - `pull_request.html_url`
 

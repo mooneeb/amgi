@@ -76,14 +76,14 @@ type GitHub struct {
 	Organizations []Organization `json:"organizations"`
 }
 
-// OrganizationMode is how events are received for an org (webhook or polling).
-type OrganizationMode string
+// ModeType is how events are received for an org (webhook or polling).
+type ModeType string
 
 const (
 	// ModeWebhook receives GitHub events in real time via webhooks.
-	ModeWebhook OrganizationMode = "webhook"
+	ModeWebhook ModeType = "webhook"
 	// ModePolling polls GitHub on a fixed interval (see PollingIntervalSeconds).
-	ModePolling OrganizationMode = "polling"
+	ModePolling ModeType = "polling"
 )
 
 // Organization is one GitHub org's watch configuration.
@@ -91,7 +91,7 @@ type Organization struct {
 	// Name is the GitHub organization login.
 	Name string `json:"name"`
 	// Mode selects webhook or polling for this organization.
-	Mode OrganizationMode `json:"mode" jsonschema:"enum=webhook,enum=polling"`
+	Mode ModeType `json:"mode" jsonschema:"enum=webhook,enum=polling"`
 	// Actions restricts which webhook actions create tasks (ignored when Mode is polling). Omitted uses defaults.
 	Actions *EventActions `json:"actions,omitempty"`
 	// PollingIntervalSeconds is the seconds between poll runs when Mode is polling.

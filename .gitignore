@@ -34,3 +34,7 @@ go.work.sum
 # helpers
 .local/
 .cursor/
+.amgi/
+
+# agentic files
+CLAUDE.md
