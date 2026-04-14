@@ -91,6 +91,8 @@ Receives GitHub events and normalizes them into an internal issue/PR representat
 
 Decides whether an event should result in a Marvin task based on configuration. Applies filter rules (labels, assignees, author, title, branches, reviewers) using operators `in`, `notIn`, `exists`, and `doesNotExist`. All conditions are ANDed; global and per-repo filters apply.
 
+If no filters re defined, all issues and/or Pull Requests are considered as matching.
+
 **Inputs:** Normalized event and filter configuration.
 
 **Outputs:** Boolean (match or no match). Only matched events proceed to the idempotency check.
@@ -241,14 +243,16 @@ When any organization uses `mode: webhook`, AMGI runs an HTTP server to receive 
 
 ### Filter operators
 
-Filters use four operators (Kubernetes-inspired): `in`, `notIn`, `exists`, `doesNotExist`. All conditions are ANDed within and across fields. Global filters apply to all repos unless a repo defines its own `filters`; per-repo filters replace global for that repo.
+Filters use four operators (Kubernetes-inspired): `in`, `notIn`, `exists`, `doesNotExist`. All conditions are ANDed within and across fields. Filter resolution follows the hierarchy: per-repo → per-org → global. The most specific level wins; there is no merging between levels.
 
 | Operator       | Semantics                                                     | Value type       |
 | -------------- | ------------------------------------------------------------- | ---------------- |
-| `in`           | Field value must be in the list                               | array of strings |
-| `notIn`        | Field value must not be in the list                           | array of strings |
+| `in`           | At least one field value must match an entry in the list      | array of strings |
+| `notIn`        | No field value may match any entry in the list                | array of strings |
 | `exists`       | At least one value must exist (`true`) or no values (`false`) | boolean          |
 | `doesNotExist` | No values (`true`) or at least one value (`false`)            | boolean          |
+
+> **Note:** For multi-value fields (labels, assignees, reviewers), `in` and `notIn` use exact string matching. For single-value fields (title, author, branch), `in` and `notIn` values are treated as [Go regular expression](https://pkg.go.dev/regexp/syntax) patterns. For example, `title.in: ["^\\[WIP\\]"]` matches titles starting with `[WIP]`.
 
 **Examples**
 
@@ -427,13 +431,19 @@ github:
       actions:
         issues: [opened, assigned]
         pull_requests: [review_requested, assigned]
+      filters:                          # org-level: overrides global for all repos in acme
+        issues:
+          labels:
+            in: [bug, feature]
+          assignees:
+            exists: true
       repositories:
-        - name: bar
+        - name: bar                     # uses org-level filters
         - name: foo
           marvin_config_id: pr-config
           actions:
             issues: [opened]
-          filters:
+          filters:                      # repo-level: overrides org-level for foo only
             issues:
               labels:
                 in: [bug]
@@ -638,9 +648,11 @@ If Marvin addTask fails after filter match, AMGI retries (up to 3 attempts). If 
 
 **Retry flow**
 
-- Each run: process pending retries first (events that failed addTask on a previous run), then run the normal poll.
-- On addTask success: mark the event as processed.
-- On addTask failure (after 3 attempts): store the event with status `pending_retry` so it is retried on the next run. Store enough data (e.g. serialized event) to retry without re-fetching from GitHub.
+- Each incoming webhook triggers a retry pass before processing the new event. The retry pass queries `github_artifacts` for rows with `status = 'pending_retry'` and `retry_count < 3`.
+- For each pending retry: attempt addTask. On success, mark as `processed`. On failure, increment `retry_count`.
+- When `retry_count` reaches 3: set status to `failed`. No further retries. Failed events are logged and remain in the database for manual inspection.
+- On addTask success for the current event: insert with status `processed`.
+- On addTask failure for the current event: insert with status `pending_retry`, `retry_count = 0`, and serialized `event_data` for future retries.
 
 ## State and idempotency
 
@@ -658,8 +670,8 @@ _(Where we persist, what we store, how we prevent duplicates.)_
 | `repo`        | TEXT NOT NULL                     | Repository name                                        |
 | `number`      | INTEGER NOT NULL                  | Issue or PR number                                     |
 | `type`        | TEXT NOT NULL                     | `issue` or `pull_request`                              |
-| `title`       | TEXT                              | Issue/PR title (for display)                           |
-| `status`      | TEXT NOT NULL                     | `processed` or `pending_retry`                         |
+| `title`       | TEXT NOT NULL                     | Issue/PR title (for display)                           |
+| `status`      | TEXT NOT NULL                     | `processed`, `pending_retry`, or `failed`              |
 | `detected_on` | TIMESTAMP NOT NULL                | When first seen                                        |
 | `updated_at`  | TIMESTAMP NOT NULL                | When status last changed                               |
 | `retry_count` | INTEGER DEFAULT 0                 | Number of addTask retries (for`pending_retry` rows)    |
