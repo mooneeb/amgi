@@ -49,7 +49,7 @@ func (wh *webhook) Handler(
 	}
 
 	eventTypeRaw := r.Header.Get("X-GitHub-Event")
-	et, e, err := normalizePayload(body, eventTypeRaw, wh.logger)
+	et, e, err := normalizePayload(body, eventTypeRaw)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
 		wh.logger.Error("Failed to normalize payload", "error", err)
@@ -183,7 +183,6 @@ func validateSignature(
 func normalizePayload(
 	body []byte,
 	eventTypeRaw string,
-	logger *slog.Logger,
 ) (event.EventType, *event.Event, error) {
 	var et event.EventType
 	switch eventTypeRaw {
@@ -194,7 +193,7 @@ func normalizePayload(
 	default:
 		return "", nil, fmt.Errorf("invalid event type: %s", eventTypeRaw)
 	}
-	e, err := NormalizeGithubPayload(body, et, logger)
+	e, err := NormalizeGithubWebhookPayload(body, et)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to parse payload: %w", err)
 	}

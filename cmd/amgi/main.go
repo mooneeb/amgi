@@ -8,10 +8,10 @@ import (
 
 	"github.com/mooneeb/amgi/internal/config"
 	"github.com/mooneeb/amgi/internal/config/validate"
+	"github.com/mooneeb/amgi/internal/github/webhook"
 	"github.com/mooneeb/amgi/internal/logger"
 	"github.com/mooneeb/amgi/internal/marvin"
 	"github.com/mooneeb/amgi/internal/store"
-	"github.com/mooneeb/amgi/internal/webhook"
 )
 
 func main() {
