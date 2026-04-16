@@ -16,6 +16,7 @@ import (
 	"github.com/mooneeb/amgi/internal/event"
 	"github.com/mooneeb/amgi/internal/filter"
 	"github.com/mooneeb/amgi/internal/marvin"
+	"github.com/mooneeb/amgi/internal/marvin/miface"
 	"github.com/mooneeb/amgi/internal/store"
 )
 
@@ -49,7 +50,7 @@ func (wh *webhook) Handler(
 	}
 
 	eventTypeRaw := r.Header.Get("X-GitHub-Event")
-	et, e, err := normalizePayload(body, eventTypeRaw)
+	et, e, err := normalizePayload(body, eventTypeRaw, wh.logger)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
 		wh.logger.Error("Failed to normalize payload", "error", err)
@@ -64,14 +65,14 @@ func (wh *webhook) Handler(
 
 	wh.logger.Info("Webhook received", "event", e)
 
-	org, repo, err := resolveOrgRepo(wh.config, e)
+	owner, repo, err := resolveOwnerRepo(wh.config, e)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
-		wh.logger.Error("Failed to resolve org and repo", "error", err)
+		wh.logger.Error("Failed to resolve owner and repo", "error", err)
 		return
 	}
 
-	allowed, actions, err := isActionAllowed(org, repo, et, e.Action)
+	allowed, actions, err := isActionAllowed(owner, repo, et, e.Action)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
 		wh.logger.Error("Failed to check if action is allowed", "action", e.Action, "error", err)
@@ -83,7 +84,7 @@ func (wh *webhook) Handler(
 		return
 	}
 
-	matched, err := isEventMatch(wh.config, org, repo, actions, et, e)
+	matched, err := isEventMatch(wh.config, owner, repo, actions, et, e)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
 		wh.logger.Error("Failed to match event", "error", err)
@@ -116,7 +117,7 @@ func (wh *webhook) Handler(
 		return
 	}
 
-	mc, err := resolve.ResolveMarvinConfig(wh.config, org, repo)
+	mc, err := resolve.ResolveMarvinConfig(wh.config, owner, repo)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
 		wh.logger.Error("Failed to resolve Marvin config", "error", err)
@@ -183,6 +184,7 @@ func validateSignature(
 func normalizePayload(
 	body []byte,
 	eventTypeRaw string,
+	logger *slog.Logger,
 ) (event.EventType, *event.Event, error) {
 	var et event.EventType
 	switch eventTypeRaw {
@@ -193,35 +195,35 @@ func normalizePayload(
 	default:
 		return "", nil, fmt.Errorf("invalid event type: %s", eventTypeRaw)
 	}
-	e, err := NormalizeGithubWebhookPayload(body, et)
+	e, err := NormalizeGithubWebhookPayload(body, et, logger)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to parse payload: %w", err)
 	}
 	return et, e, nil
 }
 
-func resolveOrgRepo(
+func resolveOwnerRepo(
 	cfg *config.Config,
 	e *event.Event,
-) (*config.Organization, *config.Repository, error) {
-	org, err := resolve.ResolveOrganization(cfg, e.Org)
+) (*config.Owner, *config.Repository, error) {
+	owner, err := resolve.ResolveOwner(cfg, e.Owner)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to resolve organization: %w", err)
+		return nil, nil, fmt.Errorf("failed to resolve owner: %w", err)
 	}
-	repo, err := resolve.ResolveRepository(org, e.Repo)
+	repo, err := resolve.ResolveRepository(owner, e.Repo)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to resolve repository: %w", err)
 	}
-	return org, repo, nil
+	return owner, repo, nil
 }
 
 func isActionAllowed(
-	org *config.Organization,
+	owner *config.Owner,
 	repo *config.Repository,
 	et event.EventType,
 	eventAction event.EventAction,
 ) (bool, []string, error) {
-	actions, err := resolve.ResolveActions(org, repo, et)
+	actions, err := resolve.ResolveActions(owner, repo, et)
 	if err != nil {
 		return false, nil, fmt.Errorf("failed to resolve actions: %w", err)
 	}
@@ -236,14 +238,14 @@ func isActionAllowed(
 
 func isEventMatch(
 	cfg *config.Config,
-	org *config.Organization,
+	owner *config.Owner,
 	repo *config.Repository,
 	actions []string,
 	et event.EventType,
 	e *event.Event,
 ) (bool, error) {
 	matched := false
-	filters, err := resolve.ResolveFilters(cfg, org, repo)
+	filters, err := resolve.ResolveFilters(cfg, owner, repo)
 	if err != nil {
 		return matched, fmt.Errorf("failed to resolve filters: %w", err)
 	}
@@ -266,7 +268,7 @@ func isEventMatch(
 }
 
 func isIdempotent(store *store.Store, e *event.Event) (bool, error) {
-	exists, err := store.HasEvent(e.Org, e.Repo, e.Number)
+	exists, err := store.HasEvent(e.Owner, e.Repo, e.Number)
 	if err != nil {
 		return false, fmt.Errorf("failed to check if event exists: %w", err)
 	}
@@ -279,7 +281,7 @@ func isIdempotent(store *store.Store, e *event.Event) (bool, error) {
 func RetryPendingEvents(
 	st *store.Store,
 	cfg *config.Config,
-	marvin *marvin.Client,
+	marvinAPI miface.MarvinAPI,
 	logger *slog.Logger,
 ) error {
 	events, err := st.GetPendingRetryEvents(config.MaxRetryAttempts)
@@ -287,39 +289,39 @@ func RetryPendingEvents(
 		return fmt.Errorf("failed to get pending retry events: %w", err)
 	}
 	for _, e := range events {
-		org, repo, err := resolveOrgRepo(cfg, e.Event)
+		owner, repo, err := resolveOwnerRepo(cfg, e.Event)
 		if err != nil {
-			return fmt.Errorf("failed to resolve org and repo: %w", err)
+			return fmt.Errorf("failed to resolve owner and repo: %w", err)
 		}
-		mc, err := resolve.ResolveMarvinConfig(cfg, org, repo)
+		mc, err := resolve.ResolveMarvinConfig(cfg, owner, repo)
 		if err != nil {
 			return fmt.Errorf("failed to resolve Marvin config: %w", err)
 		}
-		err = marvin.AddTask(mc, e.Event)
+		err = marvinAPI.AddTask(mc, e.Event)
 		if err != nil {
 			var ss store.StoreStatus
 			retryCount := e.RetryCount + 1
-			err = st.IncrementRetryCount(e.Event.Org, e.Event.Repo, e.Event.Number)
+			err = st.IncrementRetryCount(e.Event.Owner, e.Event.Repo, e.Event.Number)
 			if err != nil {
-				logger.Error("failed to increment retry count", "error", err, "org", org.Name, "repo", repo.Name, "number", e.Event.Number)
+				logger.Error("failed to increment retry count", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number)
 			}
 			if retryCount >= config.MaxRetryAttempts {
 				ss = store.StoreStatusFailed
 			} else {
 				ss = store.StoreStatusPendingRetry
 			}
-			err = st.MarkAs(e.Event.Org, e.Event.Repo, e.Event.Number, ss)
+			err = st.MarkAs(e.Event.Owner, e.Event.Repo, e.Event.Number, ss)
 			if err != nil {
-				logger.Error("failed to mark as", "error", err, "org", org.Name, "repo", repo.Name, "number", e.Event.Number, "status", ss)
+				logger.Error("failed to mark as", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number, "status", ss)
 			}
 			continue
 		}
 
-		err = st.MarkAs(e.Event.Org, e.Event.Repo, e.Event.Number, store.StoreStatusProcessed)
+		err = st.MarkAs(e.Event.Owner, e.Event.Repo, e.Event.Number, store.StoreStatusProcessed)
 		if err != nil {
-			logger.Error("failed to mark as processed", "error", err, "org", org.Name, "repo", repo.Name, "number", e.Event.Number)
+			logger.Error("failed to mark as processed", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number)
 		}
-		logger.Info("Event retried successfully", "org", org.Name, "repo", repo.Name, "number", e.Event.Number)
+		logger.Info("Event retried successfully", "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number)
 	}
 	return nil
 }

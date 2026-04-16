@@ -7,32 +7,32 @@ import (
 	"github.com/mooneeb/amgi/internal/event"
 )
 
-func ResolveOrganization(
+func ResolveOwner(
 	config *config.Config,
-	orgName string,
-) (*config.Organization, error) {
-	for _, org := range config.GitHub.Organizations {
-		if org.Name == orgName {
-			return &org, nil
+	ownerName string,
+) (*config.Owner, error) {
+	for _, owner := range config.GitHub.Owners {
+		if owner.Name == ownerName {
+			return &owner, nil
 		}
 	}
-	return nil, fmt.Errorf("organization %s not found in config", orgName)
+	return nil, fmt.Errorf("owner %s not found in config", ownerName)
 }
 
-	func ResolveRepository(
-	org *config.Organization,
+func ResolveRepository(
+	owner *config.Owner,
 	repoName string,
 ) (*config.Repository, error) {
-	for _, repo := range org.Repositories {
+	for _, repo := range owner.Repositories {
 		if repo.Name == repoName {
 			return &repo, nil
 		}
 	}
-	return nil, fmt.Errorf("repository %s not found in organization %s", repoName, org.Name)
+	return nil, fmt.Errorf("repository %s not found under owner %s", repoName, owner.Name)
 }
 
 func ResolveActions(
-	org *config.Organization,
+	owner *config.Owner,
 	repo *config.Repository,
 	et event.EventType,
 ) ([]string, error) {
@@ -51,17 +51,17 @@ func ResolveActions(
 				return event.EventTypePullRequestActions, nil
 			}
 		}
-	} else if org.Actions != nil {
+	} else if owner.Actions != nil {
 		switch et {
 		case event.EventTypeIssue:
-			if org.Actions.Issues != nil {
-				return org.Actions.Issues, nil
+			if owner.Actions.Issues != nil {
+				return owner.Actions.Issues, nil
 			} else {
 				return event.EventTypeIssueActions, nil
 			}
 		case event.EventTypePullRequest:
-			if org.Actions.PullRequests != nil {
-				return org.Actions.PullRequests, nil
+			if owner.Actions.PullRequests != nil {
+				return owner.Actions.PullRequests, nil
 			} else {
 				return event.EventTypePullRequestActions, nil
 			}
@@ -74,18 +74,18 @@ func ResolveActions(
 			return event.EventTypePullRequestActions, nil
 		}
 	}
-	return nil, fmt.Errorf("no actions found for org %s or repo %s for event type %s", org.Name, repo.Name, et)
+	return nil, fmt.Errorf("no actions found for owner %s or repo %s for event type %s", owner.Name, repo.Name, et)
 }
 
 func ResolveFilters(
 	config *config.Config,
-	org *config.Organization,
+	owner *config.Owner,
 	repo *config.Repository,
 ) (*config.Filters, error) {
 	if repo.Filters != nil {
 		return repo.Filters, nil
-	} else if org.Filters != nil {
-		return org.Filters, nil
+	} else if owner.Filters != nil {
+		return owner.Filters, nil
 	} else if config.Filters != nil {
 		return config.Filters, nil
 	} else {
@@ -95,15 +95,15 @@ func ResolveFilters(
 
 func ResolveMarvinConfig(
 	config *config.Config,
-	org *config.Organization,
+	owner *config.Owner,
 	repo *config.Repository,
 ) (*config.MarvinConfig, error) {
 	if repo.MarvinConfigID != "" {
 		return resolveMarvinConfigId(config, repo.MarvinConfigID)
-	} else if org.MarvinConfigID != "" {
-		return resolveMarvinConfigId(config, org.MarvinConfigID)
+	} else if owner.MarvinConfigID != "" {
+		return resolveMarvinConfigId(config, owner.MarvinConfigID)
 	} else {
-		return nil, fmt.Errorf("no marvin config id found for org %s or repo %s", org.Name, repo.Name)
+		return nil, fmt.Errorf("no marvin config id found for owner %s or repo %s", owner.Name, repo.Name)
 	}
 }
 

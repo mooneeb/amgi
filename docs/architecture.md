@@ -6,7 +6,7 @@ This document describes in detail the Architecture AMGI syncs GitHub issues and 
 
 ### Modes
 
-AMGI supports two ways to receive GitHub events. Mode is configured per organization; both can coexist for different orgs.
+AMGI supports two ways to receive GitHub events. Mode is configured per owner; both can coexist for different owners.
 
 #### Webhook
 
@@ -127,7 +127,7 @@ AMGI consumes GitHub **issues** and **pull_request** webhook events and REST API
 
 **Configurable actions (webhook only)**
 
-In webhook mode, only events whose `action` matches the configured list create Marvin tasks. Defaults: for **issues**, `opened` and `assigned`; for **pull requests**, `review_requested` and `assigned`. Actions are configurable per organization; repositories may override.
+In webhook mode, only events whose `action` matches the configured list create Marvin tasks. Defaults: for **issues**, `opened` and `assigned`; for **pull requests**, `review_requested` and `assigned`. Actions are configurable per owner; repositories may override.
 
 Polling fetches current state (issues/PRs) from the GitHub API; it does not receive event actions. AMGI only creates tasks for issues/PRs seen for the first time (equivalent to `opened`). The actions config does not apply to polling.
 
@@ -182,7 +182,7 @@ Filters and templates operate on this representation. Filter rules (labels, assi
 
 | Field       | Type     | Description                                                |
 | ----------- | -------- | ---------------------------------------------------------- |
-| `org`       | string   | Organization or owner login (from`repository.full_name`).  |
+| `owner`     | string   | Owner login (from `repository.full_name`).                 |
 | `repo`      | string   | Repository name.                                           |
 | `number`    | integer  | Issue or PR number.                                        |
 | `type`      | string   | `issue` or `pull_request`.                                 |
@@ -224,17 +224,17 @@ See [Configuration](#configuration) for template syntax and [Integrations](#inte
 
 ### Idempotency
 
-The idempotency key uniquely identifies an issue or PR, not the action. We use `{org}/{repo}#{number}` (e.g. `acme/foo#42`). This ensures that when multiple actions fire for the same item (e.g. `opened` then `assigned`), only one Marvin task is created. The key is computed after the filter matches. It is checked against the store before creating a Marvin task. If the key exists, the event is skipped. If not, the task is created and the key is recorded. Store schema and retention are documented in [State and idempotency](#state-and-idempotency).
+The idempotency key uniquely identifies an issue or PR, not the action. We use `{owner}/{repo}#{number}` (e.g. `acme/foo#42`). This ensures that when multiple actions fire for the same item (e.g. `opened` then `assigned`), only one Marvin task is created. The key is computed after the filter matches. It is checked against the store before creating a Marvin task. If the key exists, the event is skipped. If not, the task is created and the key is recorded. Store schema and retention are documented in [State and idempotency](#state-and-idempotency).
 
 ## Configuration
 
 ### Config file structure
 
-The config file is YAML. Top-level keys: `version` (required), `filters` (optional), `webhook_server` (optional; required when any org uses webhook), `github` (required), `marvin` (required). The full schema is defined in [docs/schema.yaml](schema.yaml). Config validation: [[[PLACEHOLDER]]] update when the config linter is defined.
+The config file is YAML. Top-level keys: `version` (required), `filters` (optional), `webhook_server` (optional; required when any owner uses webhook), `github` (required), `marvin` (required). The full schema is defined in [docs/schema.yaml](schema.yaml). Config validation: [[[PLACEHOLDER]]] update when the config linter is defined.
 
 ### Webhook server
 
-When any organization uses `mode: webhook`, AMGI runs an HTTP server to receive webhooks. Configure top-level `webhook_server`. Omit `port` or `path` to use defaults:
+When any owner uses `mode: webhook`, AMGI runs an HTTP server to receive webhooks. Configure top-level `webhook_server`. Omit `port` or `path` to use defaults:
 
 | Key    | Default            | Description                                                                                     |
 | ------ | ------------------ | ----------------------------------------------------------------------------------------------- |
@@ -243,7 +243,7 @@ When any organization uses `mode: webhook`, AMGI runs an HTTP server to receive 
 
 ### Filter operators
 
-Filters use four operators (Kubernetes-inspired): `in`, `notIn`, `exists`, `doesNotExist`. All conditions are ANDed within and across fields. Filter resolution follows the hierarchy: per-repo → per-org → global. The most specific level wins; there is no merging between levels.
+Filters use four operators (Kubernetes-inspired): `in`, `notIn`, `exists`, `doesNotExist`. All conditions are ANDed within and across fields. Filter resolution follows the hierarchy: per-repo → per-owner → global. The most specific level wins; there is no merging between levels.
 
 | Operator       | Semantics                                                     | Value type       |
 | -------------- | ------------------------------------------------------------- | ---------------- |
@@ -272,22 +272,22 @@ filters:
 
 ### Marvin config ID resolution
 
-A Marvin config defines where a task goes (list/category), which labels it gets, and how its title and note are formatted. For each event we must pick one config. The `marvin_config_id` selects which config to use; it can be set per organization or per repository.
+A Marvin config defines where a task goes (list/category), which labels it gets, and how its title and note are formatted. For each event we must pick one config. The `marvin_config_id` selects which config to use; it can be set per owner or per repository.
 
 **Lookup**
 
-For an event in org `acme` and repo `foo`: if `foo` is defined as an object with `marvin_config_id`, use that. Otherwise use the organization's `marvin_config_id`. Every organization must have `marvin_config_id`; repositories may override it.
+For an event in owner `acme` and repo `foo`: if `foo` is defined as an object with `marvin_config_id`, use that. Otherwise use the owner's `marvin_config_id`. Every owner must have `marvin_config_id`; repositories may override it.
 
 **Example**
 
 ```yaml
 github:
-  organizations:
+  owners:
     - name: acme
       mode: webhook
-      marvin_config_id: issues-config # default for all repos in this org
+      marvin_config_id: issues-config # default for all repos under this owner
       repositories:
-        - name: bar # uses issues-config (org default)
+        - name: bar # uses issues-config (owner default)
         - name: foo
           marvin_config_id: pr-config # overrides; uses pr-config for foo only
 marvin:
@@ -308,7 +308,7 @@ Events in `acme/bar` use `issues-config`. Events in `acme/foo` use `pr-config`.
 
 Templates use [Go template](https://pkg.go.dev/text/template) syntax. Variables are derived from the [normalized event](#internal-representation). Available fields:
 
-- `Org`
+- `Owner`
 - `Repo`
 - `Number`
 - `Type`
@@ -332,7 +332,7 @@ Templates use [Go template](https://pkg.go.dev/text/template) syntax. Variables 
 title_template: "{{.Type}} No. {{.Number}}: {{.Title}}"
 
 # With repo context: "Review PR No. 42 in acme/foo"
-title_template: "Review {{.Type}} No. {{.Number}} in {{.Org}}/{{.Repo}}"
+title_template: "Review {{.Type}} No. {{.Number}} in {{.Owner}}/{{.Repo}}"
 
 # With action: "Assigned: Issue No. 42"
 title_template: "{{.Action}}: {{.Type}} No. {{.Number}}"
@@ -347,7 +347,7 @@ note_template: "{{.Body}}"
 # With metadata
 note_template: |
   **Author:** {{.Author}}
-  **Repo:** {{.Org}}/{{.Repo}}
+  **Repo:** {{.Owner}}/{{.Repo}}
   **Link:** {{.HtmlUrl}}
   ---
   {{.Body}}
@@ -382,24 +382,24 @@ Any other GitHub actions are ignored.
 - Issues: `[opened, assigned]`
 - Pull requests: `[review_requested, assigned]`
 
-Configurable per organization; repositories may override.
+Configurable per owner; repositories may override.
 
 **Lookup**
 
-For an event in org `acme` and repo `foo`: if `foo` is defined as a repository with `actions`, use that. Otherwise use the organization's `actions`. When omitted at both levels, defaults apply.
+For an event in owner `acme` and repo `foo`: if `foo` is defined as a repository with `actions`, use that. Otherwise use the owner's `actions`. When omitted at both levels, defaults apply.
 
 **Example**
 
 ```yaml
 github:
-  organizations:
+  owners:
     - name: acme
       mode: webhook
       actions:
         issues: [opened, assigned]
         pull_requests: [review_requested, assigned]
       repositories:
-        - name: bar # uses org actions
+        - name: bar # uses owner actions
         - name: foo
           actions: # override for foo only
             issues: [opened] # no assigned for this repo
@@ -424,26 +424,26 @@ webhook_server:
   port: 8080
   path: /webhooks/github
 github:
-  organizations:
+  owners:
     - name: acme
       mode: webhook
       marvin_config_id: issues-config
       actions:
         issues: [opened, assigned]
         pull_requests: [review_requested, assigned]
-      filters:                          # org-level: overrides global for all repos in acme
+      filters:                          # owner-level: overrides global for all repos in acme
         issues:
           labels:
             in: [bug, feature]
           assignees:
             exists: true
       repositories:
-        - name: bar                     # uses org-level filters
+        - name: bar                     # uses owner-level filters
         - name: foo
           marvin_config_id: pr-config
           actions:
             issues: [opened]
-          filters:                      # repo-level: overrides org-level for foo only
+          filters:                      # repo-level: overrides owner-level for foo only
             issues:
               labels:
                 in: [bug]
@@ -467,7 +467,7 @@ marvin:
       list_name: Reviews
       label_names: [github, pr]
       task:
-        title_template: "Review {{.Type}} No. {{.Number}} in {{.Org}}/{{.Repo}}"
+        title_template: "Review {{.Type}} No. {{.Number}} in {{.Owner}}/{{.Repo}}"
         note_template: |
           **Author:** {{.Author}}
           **Branch:** {{.Branch}}
@@ -665,8 +665,8 @@ _(Where we persist, what we store, how we prevent duplicates.)_
 
 | Column        | Type                              | Purpose                                                |
 | ------------- | --------------------------------- | ------------------------------------------------------ |
-| `id`          | INTEGER PRIMARY KEY AUTOINCREMENT | Synthetic key; queries mostly use`(org, repo, number)` |
-| `org`         | TEXT NOT NULL                     | Organization or owner                                  |
+| `id`          | INTEGER PRIMARY KEY AUTOINCREMENT | Synthetic key; queries mostly use`(owner, repo, number)` |
+| `owner`       | TEXT NOT NULL                     | Owner login (user or organization)                       |
 | `repo`        | TEXT NOT NULL                     | Repository name                                        |
 | `number`      | INTEGER NOT NULL                  | Issue or PR number                                     |
 | `type`        | TEXT NOT NULL                     | `issue` or `pull_request`                              |
@@ -677,18 +677,18 @@ _(Where we persist, what we store, how we prevent duplicates.)_
 | `retry_count` | INTEGER DEFAULT 0                 | Number of addTask retries (for`pending_retry` rows)    |
 | `event_data`  | JSON                              | Serialized event for retry; null when`processed`       |
 
-`UNIQUE (org, repo, number)` for idempotency. See [Failure behavior](#failure-behavior) for retry flow.
+`UNIQUE (owner, repo, number)` for idempotency. See [Failure behavior](#failure-behavior) for retry flow.
 
 **poll_state**
 
 | Column           | Type                              | Purpose                                 |
 | ---------------- | --------------------------------- | --------------------------------------- |
-| `id`             | INTEGER PRIMARY KEY AUTOINCREMENT | Synthetic key; queries use`(org, repo)` |
-| `org`            | TEXT NOT NULL                     | Organization                            |
+| `id`             | INTEGER PRIMARY KEY AUTOINCREMENT | Synthetic key; queries use`(owner, repo)` |
+| `owner`          | TEXT NOT NULL                     | Owner login                               |
 | `repo`           | TEXT NOT NULL                     | Repository                              |
 | `last_polled_at` | TIMESTAMP NOT NULL                | Used as`since` on next poll             |
 
-`UNIQUE (org, repo)`.
+`UNIQUE (owner, repo)`.
 
 **Store**
 
@@ -696,7 +696,7 @@ SQLite database. Path configurable (TBD). Single-writer assumption: one AMGI pro
 
 **Duplicate detection**
 
-Idempotency key: `{org}/{repo}#{number}` (see [Idempotency](#idempotency)). Lookup uses `(org, repo, number)` against `github_artifacts`. Lifecycle: row created on first seen; status updated to `processed` on addTask success or `pending_retry` on failure; no automatic deletion.
+Idempotency key: `{owner}/{repo}#{number}` (see [Idempotency](#idempotency)). Lookup uses `(owner, repo, number)` against `github_artifacts`. Lifecycle: row created on first seen; status updated to `processed` on addTask success or `pending_retry` on failure; no automatic deletion.
 
 **Retention**
 

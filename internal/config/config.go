@@ -13,9 +13,9 @@ type Config struct {
 	Version string `json:"version" yaml:"version" jsonschema:"enum=1"`
 	// Filters are global rules for which issues and PRs create Marvin tasks. Repositories may replace these with per-repo filters.
 	Filters *Filters `json:"filters,omitempty" yaml:"filters,omitempty"`
-	// WebhookServer is where AMGI listens for GitHub webhooks. Required when any organization uses webhook mode.
+	// WebhookServer is where AMGI listens for GitHub webhooks. Required when any owner uses webhook mode.
 	WebhookServer *WebhookServer `json:"webhook_server,omitempty" yaml:"webhook_server,omitempty"`
-	// GitHub lists organizations and repositories to watch.
+	// GitHub lists owners and repositories to watch.
 	GitHub GitHub `json:"github" yaml:"github"`
 	// Marvin holds named configs (lists, labels, templates) referenced by marvin_config_id.
 	Marvin Marvin `json:"marvin" yaml:"marvin"`
@@ -79,11 +79,11 @@ type WebhookServer struct {
 
 // GitHub is GitHub connection and source configuration.
 type GitHub struct {
-	// Organizations is the list of GitHub orgs to watch (webhook vs polling is per org).
-	Organizations []Organization `json:"organizations" yaml:"organizations"`
+	// Owners is the list of GitHub owners to watch (webhook vs polling is per owner).
+	Owners []Owner `json:"owners" yaml:"owners"`
 }
 
-// ModeType is how events are received for an org (webhook or polling).
+// ModeType is how events are received for an owner (webhook or polling).
 type ModeType string
 
 const (
@@ -93,21 +93,21 @@ const (
 	ModePolling ModeType = "polling"
 )
 
-// Organization is one GitHub org's watch configuration.
-type Organization struct {
-	// Name is the GitHub organization login.
+// Owner is one GitHub owner's watch configuration.
+type Owner struct {
+	// Name is the GitHub owner login (user or organization).
 	Name string `json:"name"`
-	// Mode selects webhook or polling for this organization.
+	// Mode selects webhook or polling for this owner.
 	Mode ModeType `json:"mode" yaml:"mode" jsonschema:"enum=webhook,enum=polling"`
 	// Actions restricts which webhook actions create tasks (ignored when Mode is polling). Omitted uses defaults.
 	Actions *EventActions `json:"actions,omitempty" yaml:"actions,omitempty"`
 	// PollingIntervalSeconds is the seconds between poll runs when Mode is polling.
 	PollingIntervalSeconds *int `json:"polling_interval_seconds,omitempty" yaml:"polling_interval_seconds,omitempty" jsonschema:"minimum=1"`
-	// MarvinConfigID selects the default marvin.configs entry for repos in this org unless overridden per repository.
+	// MarvinConfigID selects the default marvin.configs entry for repos under this owner unless overridden per repository.
 	MarvinConfigID string `json:"marvin_config_id" yaml:"marvin_config_id"`
-	// Repositories lists repos to watch under this organization.
+	// Repositories lists repos to watch under this owner.
 	Repositories []Repository `json:"repositories" yaml:"repositories"`
-	// Filters replaces global filters for this organization only when set.
+	// Filters replaces global filters for this owner only when set.
 	Filters *Filters `json:"filters,omitempty" yaml:"filters,omitempty"`
 }
 
@@ -119,13 +119,13 @@ type EventActions struct {
 	PullRequests []string `json:"pull_requests,omitempty" yaml:"pull_requests,omitempty" jsonschema:"enum=review_requested,enum=assigned"`
 }
 
-// Repository is a repository entry that exists in a GitHub organization.
+// Repository is a repository entry that exists under a GitHub owner.
 type Repository struct {
-	// Name is the repository name within the organization (not org/repo).
+	// Name is the repository name without the owner prefix (not owner/repo).
 	Name string `json:"name" yaml:"name"`
-	// MarvinConfigID overrides the organization's marvin_config_id for this repo when set.
+	// MarvinConfigID overrides the owner's marvin_config_id for this repo when set.
 	MarvinConfigID string `json:"marvin_config_id,omitempty" yaml:"marvin_config_id,omitempty"`
-	// Actions overrides the organization's EventActions for this repo (webhook only; ignored for polling).
+	// Actions overrides the owner's EventActions for this repo (webhook only; ignored for polling).
 	Actions *EventActions `json:"actions,omitempty" yaml:"actions,omitempty"`
 	// Filters replaces global filters for this repository only when set.
 	Filters *Filters `json:"filters,omitempty" yaml:"filters,omitempty"`

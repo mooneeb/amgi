@@ -53,7 +53,7 @@ func TestInsert(t *testing.T) {
 	defer s.db.Close()
 
 	e := event.Event{
-		Org:    "test",
+		Owner:    "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "test",
@@ -64,7 +64,7 @@ func TestInsert(t *testing.T) {
 		t.Fatalf("Insert() failed: %v", err)
 	}
 
-	row := s.db.QueryRow("SELECT count(*) FROM github_artifacts WHERE org = ? AND repo = ? AND number = ?", e.Org, e.Repo, e.Number)
+	row := s.db.QueryRow("SELECT count(*) FROM github_artifacts WHERE owner = ? AND repo = ? AND number = ?", e.Owner, e.Repo, e.Number)
 	var count int
 	err = row.Scan(&count)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestExists(t *testing.T) {
 	defer s.db.Close()
 
 	e := event.Event{
-		Org:    "test",
+		Owner:    "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "test",
@@ -100,7 +100,7 @@ func TestExists(t *testing.T) {
 		t.Fatalf("Insert() failed: %v", err)
 	}
 
-	p, err := s.HasEvent(e.Org, e.Repo, e.Number)
+	p, err := s.HasEvent(e.Owner, e.Repo, e.Number)
 	if err != nil {
 		t.Fatalf("Exists() failed: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestExists(t *testing.T) {
 
 	// pending_retry should also return true — Exists checks any status
 	e2 := event.Event{
-		Org:    "test",
+		Owner:    "test",
 		Repo:   "test",
 		Number: 2,
 		Type:   "test",
@@ -122,7 +122,7 @@ func TestExists(t *testing.T) {
 		t.Fatalf("Insert() failed: %v", err)
 	}
 
-	p, err = s.HasEvent(e2.Org, e2.Repo, e2.Number)
+	p, err = s.HasEvent(e2.Owner, e2.Repo, e2.Number)
 	if err != nil {
 		t.Fatalf("Exists() failed: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestIsProcessed(t *testing.T) {
 
 	// processed event should return true
 	e := event.Event{
-		Org:    "test",
+		Owner:    "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "issue",
@@ -154,7 +154,7 @@ func TestIsProcessed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Insert() failed: %v", err)
 	}
-	p, err := s.IsEventProcessed(e.Org, e.Repo, e.Number)
+	p, err := s.IsEventProcessed(e.Owner, e.Repo, e.Number)
 	if err != nil {
 		t.Fatalf("IsProcessed() failed: %v", err)
 	}
@@ -164,7 +164,7 @@ func TestIsProcessed(t *testing.T) {
 
 	// pending_retry event should return false
 	e2 := event.Event{
-		Org:    "test",
+		Owner:    "test",
 		Repo:   "test",
 		Number: 2,
 		Type:   "issue",
@@ -174,7 +174,7 @@ func TestIsProcessed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Insert() failed: %v", err)
 	}
-	p, err = s.IsEventProcessed(e2.Org, e2.Repo, e2.Number)
+	p, err = s.IsEventProcessed(e2.Owner, e2.Repo, e2.Number)
 	if err != nil {
 		t.Fatalf("IsProcessed() failed: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestExists_NotInDB(t *testing.T) {
 	defer s.db.Close()
 
 	// Query for an event that was never inserted
-	p, err := s.HasEvent("ghost-org", "ghost-repo", 999)
+	p, err := s.HasEvent("ghost-owner", "ghost-repo", 999)
 	if err != nil {
 		t.Fatalf("Exists() failed: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestInsert_Duplicate(t *testing.T) {
 	defer s.db.Close()
 
 	e := event.Event{
-		Org:    "test",
+		Owner:    "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "issue",
@@ -229,7 +229,7 @@ func TestInsert_Duplicate(t *testing.T) {
 		t.Fatalf("first Insert() failed: %v", err)
 	}
 
-	// Second insert with same (org, repo, number) should not error
+	// Second insert with same (owner, repo, number) should not error
 	err = s.Insert(&e, StoreStatusProcessed)
 	if err != nil {
 		t.Errorf("duplicate Insert() returned error: %v", err)
@@ -237,7 +237,7 @@ func TestInsert_Duplicate(t *testing.T) {
 
 	// Should still be exactly 1 row
 	var count int
-	err = s.db.QueryRow("SELECT count(*) FROM github_artifacts WHERE org = ? AND repo = ? AND number = ?", e.Org, e.Repo, e.Number).Scan(&count)
+	err = s.db.QueryRow("SELECT count(*) FROM github_artifacts WHERE owner = ? AND repo = ? AND number = ?", e.Owner, e.Repo, e.Number).Scan(&count)
 	if err != nil {
 		t.Fatalf("failed to count rows: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestMarkAs(t *testing.T) {
 	defer s.db.Close()
 
 	e := event.Event{
-		Org:    "test",
+		Owner:    "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "issue",
@@ -273,7 +273,7 @@ func TestMarkAs(t *testing.T) {
 
 	// Verify status is pending_retry
 	var status string
-	err = s.db.QueryRow("SELECT status FROM github_artifacts WHERE org = ? AND repo = ? AND number = ?", e.Org, e.Repo, e.Number).Scan(&status)
+	err = s.db.QueryRow("SELECT status FROM github_artifacts WHERE owner = ? AND repo = ? AND number = ?", e.Owner, e.Repo, e.Number).Scan(&status)
 	if err != nil {
 		t.Fatalf("failed to query status: %v", err)
 	}
@@ -282,13 +282,13 @@ func TestMarkAs(t *testing.T) {
 	}
 
 	// Mark as processed
-	err = s.MarkAs(e.Org, e.Repo, e.Number, StoreStatusProcessed)
+	err = s.MarkAs(e.Owner, e.Repo, e.Number, StoreStatusProcessed)
 	if err != nil {
 		t.Fatalf("MarkAs() failed: %v", err)
 	}
 
 	// Verify status changed to processed
-	err = s.db.QueryRow("SELECT status FROM github_artifacts WHERE org = ? AND repo = ? AND number = ?", e.Org, e.Repo, e.Number).Scan(&status)
+	err = s.db.QueryRow("SELECT status FROM github_artifacts WHERE owner = ? AND repo = ? AND number = ?", e.Owner, e.Repo, e.Number).Scan(&status)
 	if err != nil {
 		t.Fatalf("failed to query status after mark: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestIncrementRetryCount(t *testing.T) {
 	defer s.db.Close()
 
 	e := event.Event{
-		Org:    "test",
+		Owner:    "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "issue",
@@ -320,13 +320,13 @@ func TestIncrementRetryCount(t *testing.T) {
 		t.Fatalf("Insert() failed: %v", err)
 	}
 
-	err = s.IncrementRetryCount(e.Org, e.Repo, e.Number)
+	err = s.IncrementRetryCount(e.Owner, e.Repo, e.Number)
 	if err != nil {
 		t.Fatalf("IncrementRetryCount() failed: %v", err)
 	}
 
 	var retryCount int
-	err = s.db.QueryRow("SELECT retry_count FROM github_artifacts WHERE org = ? AND repo = ? AND number = ?", e.Org, e.Repo, e.Number).Scan(&retryCount)
+	err = s.db.QueryRow("SELECT retry_count FROM github_artifacts WHERE owner = ? AND repo = ? AND number = ?", e.Owner, e.Repo, e.Number).Scan(&retryCount)
 	if err != nil {
 		t.Fatalf("failed to query retry count: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestGetPendingRetryEvents(t *testing.T) {
 	}
 	defer s.db.Close()
 	e := event.Event{
-		Org:    "test",
+		Owner:    "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "issue",

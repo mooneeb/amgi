@@ -3,6 +3,7 @@ package webhook
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/mooneeb/amgi/internal/event"
@@ -24,6 +25,7 @@ type githubIssueWebhook struct {
 func NormalizeGithubWebhookPayload(
 	payload []byte,
 	eventType event.EventType,
+	logger *slog.Logger,
 ) (*event.Event, error) {
 	switch eventType {
 	case event.EventTypeIssue:
@@ -32,47 +34,49 @@ func NormalizeGithubWebhookPayload(
 		if err != nil {
 			return nil, err
 		}
-		org, repo, err := resolveOrgAndRepo(wh.Repository)
+		owner, repo, err := resolveOwnerAndRepo(wh.Repository)
 		if err != nil {
 			return nil, err
 		}
-		action, err := getWebhookAction(wh.Action)
-		if err != nil {
-			return nil, err
+		action := getWebhookAction(wh.Action)
+		if action == "" {
+			logger.Info("Unsupported webhook action", "action", wh.Action)
+			return nil, nil
 		}
-		return igithub.NormalizeGithubIssuePayload(wh.Issue, org, repo, action)
+		return igithub.NormalizeGithubIssuePayload(wh.Issue, owner, repo, action)
 	case event.EventTypePullRequest:
 		var wh githubPullRequestWebhook
 		err := json.Unmarshal(payload, &wh)
 		if err != nil {
 			return nil, err
 		}
-		org, repo, err := resolveOrgAndRepo(wh.Repository)
+		owner, repo, err := resolveOwnerAndRepo(wh.Repository)
 		if err != nil {
 			return nil, err
 		}
-		action, err := getWebhookAction(wh.Action)
-		if err != nil {
-			return nil, err
+		action := getWebhookAction(wh.Action)
+		if action == "" {
+			logger.Info("Unsupported webhook action", "action", wh.Action)
+			return nil, nil
 		}
-		return igithub.NormalizeGithubPullRequestPayload(wh.PullRequest, org, repo, action)
+		return igithub.NormalizeGithubPullRequestPayload(wh.PullRequest, owner, repo, action)
 	default:
 		return nil, fmt.Errorf("invalid event type: %s", string(eventType))
 	}
 }
 
-func getWebhookAction(action string) (event.EventAction, error) {
+func getWebhookAction(action string) event.EventAction {
 	if action == "opened" {
-		return event.EventActionOpened, nil
+		return event.EventActionOpened
 	} else if action == "assigned" {
-		return event.EventActionAssigned, nil
+		return event.EventActionAssigned
 	} else if action == "review_requested" {
-		return event.EventActionReviewRequested, nil
+		return event.EventActionReviewRequested
 	}
-	return "", fmt.Errorf("invalid webhook action: %s", action)
+	return event.EventAction("")
 }
 
-func resolveOrgAndRepo(
+func resolveOwnerAndRepo(
 	r igithub.Repository,
 ) (string, string, error) {
 	parts := strings.Split(r.FullName, "/")

@@ -61,7 +61,7 @@ func createGithubArtifactsTable(db *sql.DB) error {
 	_, err := db.Exec(
 		`CREATE TABLE IF NOT EXISTS github_artifacts (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			org TEXT NOT NULL,
+			owner TEXT NOT NULL,
 			repo TEXT NOT NULL,
 			number INTEGER NOT NULL,
 			type TEXT NOT NULL,
@@ -71,7 +71,7 @@ func createGithubArtifactsTable(db *sql.DB) error {
 			updated_at TEXT NOT NULL,
 			retry_count INTEGER DEFAULT 0,
 			event_data JSON,
-			UNIQUE (org, repo, number)
+			UNIQUE (owner, repo, number)
 		)`,
 	)
 	if err != nil {
@@ -84,10 +84,10 @@ func createPollStateTable(db *sql.DB) error {
 	_, err := db.Exec(
 		`CREATE TABLE IF NOT EXISTS poll_state (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			org TEXT NOT NULL,
+			owner TEXT NOT NULL,
 			repo TEXT NOT NULL,
 			last_polled_at TEXT NOT NULL,
-			UNIQUE (org, repo)
+			UNIQUE (owner, repo)
 		)`,
 	)
 	if err != nil {
@@ -97,14 +97,14 @@ func createPollStateTable(db *sql.DB) error {
 }
 
 func (s *Store) HasEvent(
-	org, repo string,
+	owner, repo string,
 	number int,
 ) (bool, error) {
-	if org == "" || repo == "" || number == 0 {
-		return false, fmt.Errorf("org, repo, and number are required")
+	if owner == "" || repo == "" || number == 0 {
+		return false, fmt.Errorf("owner, repo, and number are required")
 	}
 	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM github_artifacts WHERE org = ? AND repo = ? AND number = ?", org, repo, number).Scan(&count)
+	err := s.db.QueryRow("SELECT COUNT(*) FROM github_artifacts WHERE owner = ? AND repo = ? AND number = ?", owner, repo, number).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("failed to check if event exists: %w", err)
 	}
@@ -112,14 +112,14 @@ func (s *Store) HasEvent(
 }
 
 func (s *Store) IsEventProcessed(
-	org, repo string,
+	owner, repo string,
 	number int,
 ) (bool, error) {
-	if org == "" || repo == "" || number == 0 {
-		return false, fmt.Errorf("org, repo, and number are required")
+	if owner == "" || repo == "" || number == 0 {
+		return false, fmt.Errorf("owner, repo, and number are required")
 	}
 	var count int
-	err := s.db.QueryRow("SELECT COUNT(*) FROM github_artifacts WHERE org = ? AND repo = ? AND number = ? AND status = ?", org, repo, number, string(StoreStatusProcessed)).Scan(&count)
+	err := s.db.QueryRow("SELECT COUNT(*) FROM github_artifacts WHERE owner = ? AND repo = ? AND number = ? AND status = ?", owner, repo, number, string(StoreStatusProcessed)).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("failed to check if event exists: %w", err)
 	}
@@ -138,7 +138,7 @@ func (s *Store) Insert(
 		}
 		eventData = r
 	}
-	res, err := s.db.Exec("INSERT OR IGNORE INTO github_artifacts (org, repo, number, type, title, status, detected_on, updated_at, retry_count, event_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", e.Org, e.Repo, e.Number, e.Type, e.Title, string(ss), time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339), 0, eventData)
+	res, err := s.db.Exec("INSERT OR IGNORE INTO github_artifacts (owner, repo, number, type, title, status, detected_on, updated_at, retry_count, event_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", e.Owner, e.Repo, e.Number, e.Type, e.Title, string(ss), time.Now().Format(time.RFC3339), time.Now().Format(time.RFC3339), 0, eventData)
 	if err != nil {
 		return fmt.Errorf("failed to insert event: %w", err)
 	}
@@ -147,7 +147,7 @@ func (s *Store) Insert(
 		return fmt.Errorf("failed to check if duplicate: %w", err)
 	}
 	if d {
-		s.log.Info("No new Row Added", "org", e.Org, "repo", e.Repo, "number", e.Number)
+		s.log.Info("No new Row Added", "owner", e.Owner, "repo", e.Repo, "number", e.Number)
 		return nil
 	}
 	return nil
@@ -167,11 +167,11 @@ func isDuplicate(
 }
 
 func (s *Store) MarkAs(
-	org, repo string,
+	owner, repo string,
 	number int,
 	ss StoreStatus,
 ) error {
-	_, err := s.db.Exec("UPDATE github_artifacts SET status = ?, updated_at = ? WHERE org = ? AND repo = ? AND number = ?", string(ss), time.Now().Format(time.RFC3339), org, repo, number)
+	_, err := s.db.Exec("UPDATE github_artifacts SET status = ?, updated_at = ? WHERE owner = ? AND repo = ? AND number = ?", string(ss), time.Now().Format(time.RFC3339), owner, repo, number)
 	if err != nil {
 		return fmt.Errorf("failed to mark as %s: %w", ss, err)
 	}
@@ -179,12 +179,12 @@ func (s *Store) MarkAs(
 }
 
 func (s *Store) IncrementRetryCount(
-	org, repo string,
+	owner, repo string,
 	number int,
 ) error {
-	_, err := s.db.Exec("UPDATE github_artifacts SET retry_count = retry_count + 1 WHERE org = ? AND repo = ? AND number = ?", org, repo, number)
+	_, err := s.db.Exec("UPDATE github_artifacts SET retry_count = retry_count + 1 WHERE owner = ? AND repo = ? AND number = ?", owner, repo, number)
 	if err != nil {
-		return fmt.Errorf("failed to increment retry count for org %s, repo %s, number %d: %w", org, repo, number, err)
+		return fmt.Errorf("failed to increment retry count for owner %s, repo %s, number %d: %w", owner, repo, number, err)
 	}
 	return nil
 }

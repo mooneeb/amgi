@@ -27,8 +27,8 @@ var (
 type Event struct {
 	// Type is the GitHub resource kind: "issue" or "pull_request".
 	Type string `json:"type"`
-	// Org is the repository owner (first segment of repository full_name).
-	Org string `json:"org"`
+	// Owner is the repository owner (first segment of repository full_name).
+	Owner string `json:"owner"`
 	// Repo is the repository name without owner (second segment of full_name).
 	Repo string `json:"repo"`
 	// Number is the issue or pull request number on GitHub.

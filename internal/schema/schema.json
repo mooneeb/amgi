@@ -96,9 +96,9 @@
     },
     "GitHub": {
       "properties": {
-        "organizations": {
+        "owners": {
           "items": {
-            "$ref": "#/$defs/Organization"
+            "$ref": "#/$defs/Owner"
           },
           "type": "array"
         }
@@ -106,7 +106,7 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "organizations"
+        "owners"
       ]
     },
     "IssueFilters": {
@@ -247,7 +247,7 @@
         "note_template"
       ]
     },
-    "Organization": {
+    "Owner": {
       "properties": {
         "name": {
           "type": "string"
@@ -274,6 +274,9 @@
             "$ref": "#/$defs/Repository"
           },
           "type": "array"
+        },
+        "filters": {
+          "$ref": "#/$defs/Filters"
         }
       },
       "additionalProperties": false,

@@ -11,7 +11,7 @@ import (
 func NormalizeGithubPollingPayload(
 	payload []byte,
 	eventType event.EventType,
-	org, repo string,
+	owner, repo string,
 ) (*event.Event, error) {
 	switch eventType {
 	case event.EventTypeIssue:
@@ -20,14 +20,14 @@ func NormalizeGithubPollingPayload(
 		if err != nil {
 			return nil, err
 		}
-		return igithub.NormalizeGithubIssuePayload(ppIssue, org, repo, event.EventActionOpened)
+		return igithub.NormalizeGithubIssuePayload(ppIssue, owner, repo, event.EventActionOpened)
 	case event.EventTypePullRequest:
 		var ppPullRequest igithub.PullRequest
 		err := json.Unmarshal(payload, &ppPullRequest)
 		if err != nil {
 			return nil, err
 		}
-		return igithub.NormalizeGithubPullRequestPayload(ppPullRequest, org, repo, event.EventActionOpened)
+		return igithub.NormalizeGithubPullRequestPayload(ppPullRequest, owner, repo, event.EventActionOpened)
 	default:
 		return nil, fmt.Errorf("invalid event type: %s", string(eventType))
 	}

@@ -22,8 +22,8 @@ webhook_server:
   path: /webhooks/github
 
 github:
-  organizations:
-    - name: my-org
+  owners:
+    - name: my-owner
       mode: webhook
       actions:
         issues:
@@ -45,7 +45,7 @@ github:
               author:
                 in:
                   - dependabot
-    - name: another-org
+    - name: another-owner
       mode: polling
       polling_interval_seconds: 120
       marvin_config_id: default

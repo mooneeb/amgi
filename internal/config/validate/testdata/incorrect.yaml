@@ -16,8 +16,8 @@ filters:
   state: open
 
 github:
-  organizations:
-    - name: my-org
+  owners:
+    - name: my-owner
       # Wrong: must be "webhook" or "polling" only.
       mode: hybrid
       actions:
@@ -30,8 +30,8 @@ github:
       repositories:
         - name: core-app
 
-    # Wrong: missing required "repositories" on Organization (and other required fields) — second org incomplete:
-    - name: orphan-org
+    # Wrong: missing required "repositories" on Owner (and other required fields) — second owner incomplete:
+    - name: orphan-owner
 
 webhook_server:
   # Wrong: port must be 1–65535.

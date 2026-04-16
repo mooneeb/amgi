@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/mooneeb/amgi/internal/event"
+	"github.com/mooneeb/amgi/internal/logger"
 )
 
 func TestNormalizeGithubIssuePayload(t *testing.T) {
@@ -11,30 +12,22 @@ func TestNormalizeGithubIssuePayload(t *testing.T) {
 		name      string
 		payload   []byte
 		eventType event.EventType
-		org       string
+		owner     string
 		repo      string
 		wantErr   bool
 	}{
 		{
 			name:      "valid issue payload & correct event type",
 			payload:   []byte(`{"action":"opened","issue":{"number":1,"title":"Fix login bug","body":"The login page crashes","state":"open","labels":[{"name":"bug"}],"assignees":[{"login":"moon"}],"html_url":"https://github.com/acme/foo/issues/42","user":{"login":"zain"}},"repository":{"full_name":"acme/foo"}}`),
-			org:       "test",
+			owner:     "test",
 			repo:      "test",
 			eventType: event.EventTypeIssue,
 			wantErr:   false,
 		},
-		// {
-		// 	name:      "Valid PR payload & correct event type",
-		// 	payload:   []byte(`{"action":"review_requested","repository":{"full_name":"acme/foo"},"pull_request":{"number":99,"title":"Add OAuth support","body":"Implements OAuth2 flow for third-party apps","state":"open","labels":[{"name":"feature"},{"name":"auth"}],"assignees":[{"login":"moon"},{"login":"zain"}],"html_url":"https://github.com/acme/foo/pull/99","user":{"login":"moon"},"head":{"ref":"feature/oauth"},"requested_reviewers":[{"login":"zain"},{"login":"ali"}]}}`),
-		// 	org:       "test",
-		// 	repo:      "test",
-		// 	eventType: event.EventActionOpened,
-		// 	wantErr:   false,
-		// },
 		{
 			name:      "null body in issue payload",
 			payload:   []byte(`{"action":"opened","issue":{"number":2,"title":"Fix login bug","body":null,"state":"open","labels":[{"name":"bug"}],"assignees":[{"login":"moon"}],"html_url":"https://github.com/acme/foo/issues/42","user":{"login":"zain"}},"repository":{"full_name":"acme/foo"}}`),
-			org:       "test",
+			owner:     "test",
 			repo:      "test",
 			eventType: event.EventTypeIssue,
 			wantErr:   false,
@@ -42,23 +35,15 @@ func TestNormalizeGithubIssuePayload(t *testing.T) {
 		{
 			name:      "malformed json payload",
 			payload:   []byte(`invalid payload`),
-			org:       "test",
+			owner:     "test",
 			repo:      "test",
 			eventType: event.EventTypeIssue,
 			wantErr:   true,
 		},
-		// {
-		// 	name:      "invalid repository full name",
-		// 	payload:   []byte(`{"action":"opened","issue":{"number":42,"title":"Fix login bug","body":"The login page crashes","state":"open","labels":[{"name":"bug"}],"assignees":[{"login":"moon"}],"html_url":"https://github.com/acme/foo/issues/42","user":{"login":"zain"}},"repository":{"full_name":"acme/foo/bar"}}`),
-		// 	org:       "test",
-		// 	repo:      "test",
-		// 	eventType: event.EventActionAssigned,
-		// 	wantErr:   true,
-		// },
 		{
 			name:      "invalid event type",
 			payload:   []byte(`{"action":"opened","issue":{"number":3,"title":"Fix login bug","body":"The login page crashes","state":"open","labels":[{"name":"bug"}],"assignees":[{"login":"moon"}],"html_url":"https://github.com/acme/foo/issues/42","user":{"login":"zain"}},"repository":{"full_name":"acme/foo"}}`),
-			org:       "test",
+			owner:     "test",
 			repo:      "test",
 			eventType: event.EventType("deployment"),
 			wantErr:   true,
@@ -67,7 +52,7 @@ func TestNormalizeGithubIssuePayload(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := NormalizeGithubWebhookPayload(test.payload, test.eventType)
+			_, err := NormalizeGithubWebhookPayload(test.payload, test.eventType, logger.New())
 			if (err != nil) != test.wantErr {
 				t.Errorf("NormalizeGithubIssuePayload(%s, %s) = %v, want %v", test.payload, test.eventType, err, test.wantErr)
 			}

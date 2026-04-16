@@ -46,7 +46,7 @@ type githubUser struct {
 
 func NormalizeGithubIssuePayload(
 	payload Issue,
-	org, repo string,
+	owner, repo string,
 	action event.EventAction,
 ) (*event.Event, error) {
 	var e *event.Event
@@ -56,7 +56,7 @@ func NormalizeGithubIssuePayload(
 	}
 	e = &event.Event{
 		Type:      string(event.EventTypeIssue),
-		Org:       org,
+		Owner:     owner,
 		Repo:      repo,
 		Number:    payload.Number,
 		Title:     payload.Title,
@@ -74,7 +74,7 @@ func NormalizeGithubIssuePayload(
 
 func NormalizeGithubPullRequestPayload(
 	payload PullRequest,
-	org, repo string,
+	owner, repo string,
 	action event.EventAction,
 ) (*event.Event, error) {
 	var e *event.Event
@@ -84,7 +84,7 @@ func NormalizeGithubPullRequestPayload(
 	}
 	e = &event.Event{
 		Type:      string(event.EventTypePullRequest),
-		Org:       org,
+		Owner:     owner,
 		Repo:      repo,
 		Number:    payload.Number,
 		Title:     payload.Title,
