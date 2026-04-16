@@ -19,7 +19,7 @@ func ResolveOrganization(
 	return nil, fmt.Errorf("organization %s not found in config", orgName)
 }
 
-func ResolveRepository(
+	func ResolveRepository(
 	org *config.Organization,
 	repoName string,
 ) (*config.Repository, error) {

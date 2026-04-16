@@ -3,6 +3,7 @@ package webhook
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/mooneeb/amgi/internal/event"
@@ -60,7 +61,7 @@ type githubUser struct {
 	Login string `json:"login"`
 }
 
-func NormalizeGithubPayload(payload []byte, eventType event.EventType) (*event.Event, error) {
+func NormalizeGithubPayload(payload []byte, eventType event.EventType, log *slog.Logger) (*event.Event, error) {
 	var e *event.Event
 	if eventType == event.EventTypeIssue {
 		var wh githubIssueWebhook
@@ -77,6 +78,13 @@ func NormalizeGithubPayload(payload []byte, eventType event.EventType) (*event.E
 		if wh.Issue.Body != nil {
 			body = *wh.Issue.Body
 		}
+
+		action := getWebhookAction(wh.Action)
+		if action == "" {
+			log.Info("Unsupported webhook action", "action", wh.Action)
+			return nil, nil
+		}
+
 		e = &event.Event{
 			Type:      string(eventType),
 			Org:       parts[0],
@@ -89,7 +97,7 @@ func NormalizeGithubPayload(payload []byte, eventType event.EventType) (*event.E
 			Assignees: extractStrings(wh.Issue.Assignees, func(u githubUser) string { return u.Login }),
 			Author:    wh.Issue.User.Login,
 			URL:       wh.Issue.URL,
-			Action:    event.EventActionOpened,
+			Action:    action,
 		}
 	} else if eventType == event.EventTypePullRequest {
 		var wh githubPullRequestWebhook
@@ -107,6 +115,11 @@ func NormalizeGithubPayload(payload []byte, eventType event.EventType) (*event.E
 		if wh.PullRequest.Body != nil {
 			body = *wh.PullRequest.Body
 		}
+		action := getWebhookAction(wh.Action)
+		if action == "" {
+			log.Info("Unsupported webhook action", "action", wh.Action)
+			return nil, nil
+		}
 		e = &event.Event{
 			Type:      string(eventType),
 			Org:       parts[0],
@@ -121,7 +134,7 @@ func NormalizeGithubPayload(payload []byte, eventType event.EventType) (*event.E
 			Branch:    wh.PullRequest.Head.Ref,
 			Reviewers: extractStrings(wh.PullRequest.Reviewers, func(u githubUser) string { return u.Login }),
 			URL:       wh.PullRequest.URL,
-			Action:    event.EventActionReviewRequested,
+			Action:    action,
 		}
 	} else {
 		return nil, fmt.Errorf("invalid event type: %s", string(eventType))
@@ -136,4 +149,15 @@ func extractStrings[T any](items []T, fn func(T) string) []string {
 		result[i] = fn(item)
 	}
 	return result
+}
+
+func getWebhookAction(action string) event.EventAction {
+	if action == "opened" {
+		return event.EventActionOpened
+	} else if action == "assigned" {
+		return event.EventActionAssigned
+	} else if action == "review_requested" {
+		return event.EventActionReviewRequested
+	}
+	return ""
 }

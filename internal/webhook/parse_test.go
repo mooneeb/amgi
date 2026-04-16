@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/mooneeb/amgi/internal/event"
+	"github.com/mooneeb/amgi/internal/logger"
 )
 
 func TestNormalizeGithubPayload(t *testing.T) {
@@ -53,7 +54,7 @@ func TestNormalizeGithubPayload(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := NormalizeGithubPayload(test.payload, test.eventType)
+			_, err := NormalizeGithubPayload(test.payload, test.eventType, logger.New())
 			if (err != nil) != test.wantErr {
 				t.Errorf("NormalizeGithubPayload(%s, %s) = %v, want %v", test.payload, test.eventType, err, test.wantErr)
 			}
