@@ -44,7 +44,7 @@ func main() {
 
 	l.Info("Store created successfully")
 
-	marvin := marvin.New(l, m, http.DefaultClient)
+	marvin := marvin.New(l, &m, http.DefaultClient)
 	if err != nil {
 		l.Error("Failed to create Marvin client", "error", err)
 		os.Exit(1)

@@ -8,7 +8,7 @@ import (
 	"github.com/mooneeb/amgi/internal/event"
 )
 
-func RenderTemplates(
+func renderTemplates(
 	titleTmpl string,
 	noteTmpl string,
 	e *event.Event,

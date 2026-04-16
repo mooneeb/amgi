@@ -4,7 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/mooneeb/amgi/internal/config"
-	"github.com/mooneeb/amgi/internal/marvin"
+	"github.com/mooneeb/amgi/internal/marvin/miface"
 	"github.com/mooneeb/amgi/internal/store"
 )
 
@@ -13,7 +13,7 @@ type webhook struct {
 	secret string
 	config *config.Config
 	store  *store.Store
-	marvin *marvin.Client
+	marvin miface.MarvinAPI
 }
 
 func New(
@@ -21,7 +21,7 @@ func New(
 	secret string,
 	config *config.Config,
 	store *store.Store,
-	marvin *marvin.Client,
+	marvin miface.MarvinAPI,
 ) *webhook {
 	return &webhook{
 		logger: logger,
