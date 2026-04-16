@@ -211,7 +211,7 @@ Config fields map to the addTask API as follows:
 
 | Config                      | API field / header | Description                                                                                                                                            |
 | --------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `title_template` (rendered) | `title`            | Task title. Variables from normalized event (e.g.`{{.Title}}`, `{{.Repo}}`, `{{.Number `).                                                             |
+| `title_template` (rendered) | `title`            | Task title. Variables from normalized event (e.g.`{{.Title}}`, `{{.Repo}}`, `{{.Number}} `).                                                             |
 | `note_template` (rendered)  | `note`             | Task body.                                                                                                                                             |
 | `list_id`                   | `parentId`         | Category or project ID;`"unassigned"` for Inbox.                                                                                                       |
 | `list_name`                 | `parentId`         | Resolved via GET /api/categories; ignored if`list_id` is set.                                                                                          |

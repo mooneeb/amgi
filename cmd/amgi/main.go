@@ -9,6 +9,7 @@ import (
 	"github.com/mooneeb/amgi/internal/config"
 	"github.com/mooneeb/amgi/internal/config/validate"
 	"github.com/mooneeb/amgi/internal/logger"
+	"github.com/mooneeb/amgi/internal/marvin"
 	"github.com/mooneeb/amgi/internal/store"
 	"github.com/mooneeb/amgi/internal/webhook"
 )
@@ -19,6 +20,11 @@ func main() {
 	s := os.Getenv("GITHUB_WEBHOOK_SECRET")
 	if s == "" {
 		l.Error("GITHUB_WEBHOOK_SECRET is not set")
+		os.Exit(1)
+	}
+	m := os.Getenv("MARVIN_API_TOKEN")
+	if m == "" {
+		l.Error("MARVIN_API_TOKEN is not set")
 		os.Exit(1)
 	}
 
@@ -38,7 +44,15 @@ func main() {
 
 	l.Info("Store created successfully")
 
-	wh := webhook.New(l, s, c, store)
+	marvin := marvin.New(l, m, http.DefaultClient)
+	if err != nil {
+		l.Error("Failed to create Marvin client", "error", err)
+		os.Exit(1)
+	}
+
+	l.Info("Marvin client created successfully")
+
+	wh := webhook.New(l, s, c, store, marvin)
 
 	l.Info("Webhook created successfully")
 

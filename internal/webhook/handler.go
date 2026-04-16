@@ -4,8 +4,10 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"slices"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/mooneeb/amgi/internal/config/resolve"
 	"github.com/mooneeb/amgi/internal/event"
 	"github.com/mooneeb/amgi/internal/filter"
+	"github.com/mooneeb/amgi/internal/marvin"
 	"github.com/mooneeb/amgi/internal/store"
 )
 
@@ -100,7 +103,7 @@ func (wh *webhook) Handler(
 		return
 	}
 
-	err = wh.store.Retry()
+	err = RetryPendingEvents(wh.store, wh.config, wh.marvin, wh.logger)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
 		wh.logger.Error("Failed to retry events pending retry", "error", err)
@@ -114,18 +117,45 @@ func (wh *webhook) Handler(
 		return
 	}
 
-	err = createMarvinTask(mc)
-	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		wh.logger.Error("Failed to create Marvin task", "error", err)
-		return
-	}
+	var apiError *marvin.APIError
+	err = wh.marvin.AddTask(mc, e)
+	if errors.As(err, &apiError) {
+		if apiError.StatusCode == http.StatusBadRequest ||
+			apiError.StatusCode == http.StatusUnauthorized ||
+			apiError.StatusCode == http.StatusNotFound {
 
-	err = wh.store.Insert(e, store.StoreStatusProcessed)
-	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		wh.logger.Error("Marvin Task created succesfully. Failed to insert event into store", "error", err)
-		return
+			wh.logger.Error("Failed to create Marvin task", "error", err)
+			err = wh.store.Insert(e, store.StoreStatusFailed)
+			if err != nil {
+				w.WriteHeader(http.StatusOK)
+				wh.logger.Error("Failed to insert event into store", "error", err)
+				return
+			}
+
+		} else {
+			wh.logger.Error("Failed to create Marvin task", "error", err)
+			err = wh.store.Insert(e, store.StoreStatusPendingRetry)
+			if err != nil {
+				w.WriteHeader(http.StatusOK)
+				wh.logger.Error("Failed to insert event into store", "error", err)
+				return
+			}
+		}
+	} else if err != nil {
+		wh.logger.Error("Failed to create Marvin task", "error", err)
+		err = wh.store.Insert(e, store.StoreStatusPendingRetry)
+		if err != nil {
+			w.WriteHeader(http.StatusOK)
+			wh.logger.Error("Failed to insert event into store", "error", err)
+			return
+		}
+	} else {
+		err = wh.store.Insert(e, store.StoreStatusProcessed)
+		if err != nil {
+			w.WriteHeader(http.StatusOK)
+			wh.logger.Error("Marvin Task created succesfully. Failed to insert event into store", "error", err)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -165,10 +195,10 @@ func normalizePayload(
 }
 
 func resolveOrgRepo(
-	config *config.Config,
+	cfg *config.Config,
 	e *event.Event,
 ) (*config.Organization, *config.Repository, error) {
-	org, err := resolve.ResolveOrganization(config, e.Org)
+	org, err := resolve.ResolveOrganization(cfg, e.Org)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to resolve organization: %w", err)
 	}
@@ -199,7 +229,7 @@ func isActionAllowed(
 }
 
 func isEventMatch(
-	config *config.Config,
+	cfg *config.Config,
 	org *config.Organization,
 	repo *config.Repository,
 	actions []string,
@@ -207,7 +237,7 @@ func isEventMatch(
 	e *event.Event,
 ) (bool, error) {
 	matched := false
-	filters, err := resolve.ResolveFilters(config, org, repo)
+	filters, err := resolve.ResolveFilters(cfg, org, repo)
 	if err != nil {
 		return matched, fmt.Errorf("failed to resolve filters: %w", err)
 	}
@@ -240,6 +270,50 @@ func isIdempotent(store *store.Store, e *event.Event) (bool, error) {
 	return true, nil
 }
 
-func createMarvinTask(mc *config.MarvinConfig) error {
+func RetryPendingEvents(
+	st *store.Store,
+	cfg *config.Config,
+	marvin *marvin.Client,
+	logger *slog.Logger,
+) error {
+	events, err := st.GetPendingRetryEvents(config.MaxRetryAttempts)
+	if err != nil {
+		return fmt.Errorf("failed to get pending retry events: %w", err)
+	}
+	for _, e := range events {
+		org, repo, err := resolveOrgRepo(cfg, e.Event)
+		if err != nil {
+			return fmt.Errorf("failed to resolve org and repo: %w", err)
+		}
+		mc, err := resolve.ResolveMarvinConfig(cfg, org, repo)
+		if err != nil {
+			return fmt.Errorf("failed to resolve Marvin config: %w", err)
+		}
+		err = marvin.AddTask(mc, e.Event)
+		if err != nil {
+			var ss store.StoreStatus
+			retryCount := e.RetryCount + 1
+			err = st.IncrementRetryCount(e.Event.Org, e.Event.Repo, e.Event.Number)
+			if err != nil {
+				logger.Error("failed to increment retry count", "error", err, "org", org.Name, "repo", repo.Name, "number", e.Event.Number)
+			}
+			if retryCount >= config.MaxRetryAttempts {
+				ss = store.StoreStatusFailed
+			} else {
+				ss = store.StoreStatusPendingRetry
+			}
+			err = st.MarkAs(e.Event.Org, e.Event.Repo, e.Event.Number, ss)
+			if err != nil {
+				logger.Error("failed to mark as", "error", err, "org", org.Name, "repo", repo.Name, "number", e.Event.Number, "status", ss)
+			}
+			continue
+		}
+
+		err = st.MarkAs(e.Event.Org, e.Event.Repo, e.Event.Number, store.StoreStatusProcessed)
+		if err != nil {
+			logger.Error("failed to mark as processed", "error", err, "org", org.Name, "repo", repo.Name, "number", e.Event.Number)
+		}
+		logger.Info("Event retried successfully", "org", org.Name, "repo", repo.Name, "number", e.Event.Number)
+	}
 	return nil
 }
