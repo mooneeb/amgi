@@ -246,7 +246,7 @@ func TestInsert_Duplicate(t *testing.T) {
 	}
 }
 
-func TestMarkAsProcessed(t *testing.T) {
+func TestMarkAs(t *testing.T) {
 	tmpFile := t.TempDir() + "/test.db"
 	os.Setenv("AMGI_DB_PATH", tmpFile)
 	defer os.Unsetenv("AMGI_DB_PATH")
@@ -282,9 +282,9 @@ func TestMarkAsProcessed(t *testing.T) {
 	}
 
 	// Mark as processed
-	err = s.MarkAsProcessed(e.Org, e.Repo, e.Number)
+	err = s.MarkAs(e.Org, e.Repo, e.Number, StoreStatusProcessed)
 	if err != nil {
-		t.Fatalf("MarkAsProcessed() failed: %v", err)
+		t.Fatalf("MarkAs() failed: %v", err)
 	}
 
 	// Verify status changed to processed
@@ -294,5 +294,74 @@ func TestMarkAsProcessed(t *testing.T) {
 	}
 	if status != string(StoreStatusProcessed) {
 		t.Errorf("expected status %q after MarkAsProcessed, got %q", StoreStatusProcessed, status)
+	}
+}
+
+func TestIncrementRetryCount(t *testing.T) {
+	tmpFile := t.TempDir() + "/test.db"
+	os.Setenv("AMGI_DB_PATH", tmpFile)
+	defer os.Unsetenv("AMGI_DB_PATH")
+
+	s, err := New(logger.New())
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	defer s.db.Close()
+
+	e := event.Event{
+		Org:    "test",
+		Repo:   "test",
+		Number: 1,
+		Type:   "issue",
+		Title:  "test issue",
+	}
+	err = s.Insert(&e, StoreStatusPendingRetry)
+	if err != nil {
+		t.Fatalf("Insert() failed: %v", err)
+	}
+
+	err = s.IncrementRetryCount(e.Org, e.Repo, e.Number)
+	if err != nil {
+		t.Fatalf("IncrementRetryCount() failed: %v", err)
+	}
+
+	var retryCount int
+	err = s.db.QueryRow("SELECT retry_count FROM github_artifacts WHERE org = ? AND repo = ? AND number = ?", e.Org, e.Repo, e.Number).Scan(&retryCount)
+	if err != nil {
+		t.Fatalf("failed to query retry count: %v", err)
+	}
+	if retryCount != 1 {
+		t.Errorf("expected retry count 1, got %d", retryCount)
+	}
+}
+
+func TestGetPendingRetryEvents(t *testing.T) {
+	tmpFile := t.TempDir() + "/test.db"
+	os.Setenv("AMGI_DB_PATH", tmpFile)
+	defer os.Unsetenv("AMGI_DB_PATH")
+
+	s, err := New(logger.New())
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	defer s.db.Close()
+	e := event.Event{
+		Org:    "test",
+		Repo:   "test",
+		Number: 1,
+		Type:   "issue",
+		Title:  "test issue",
+	}
+	err = s.Insert(&e, StoreStatusPendingRetry)
+	if err != nil {
+		t.Fatalf("Insert() failed: %v", err)
+	}
+
+	events, err := s.GetPendingRetryEvents(3)
+	if err != nil {
+		t.Fatalf("GetPendingRetryEvents() failed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Errorf("expected 1 event, got %d", len(events))
 	}
 }

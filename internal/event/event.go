@@ -54,3 +54,8 @@ type Event struct {
 	// URL is the public html_url of the issue or PR on GitHub.
 	URL string `json:"url"`
 }
+
+type RetryEvent struct {
+	Event      *Event
+	RetryCount int
+}

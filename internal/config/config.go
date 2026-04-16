@@ -1,8 +1,10 @@
 package config
 
 const (
-	DefaultWebhookPort int    = 8080
-	DefaultWebhookPath string = "/webhooks/github"
+	DefaultWebhookPort            int    = 8080
+	DefaultWebhookPath            string = "/webhooks/github"
+	MarvinTitleAutoCompleteHeader string = "X-Auto-Complete"
+	MaxRetryAttempts              int    = 3
 )
 
 // Config is the root AMGI configuration document.
@@ -172,7 +174,7 @@ type MarvinTask struct {
 	// PlannedMonth is the planned month (YYYY-MM).
 	PlannedMonth string `json:"planned_month,omitempty" yaml:"planned_month,omitempty" jsonschema:"pattern=^[0-9]{4}-[0-9]{2}$"`
 	// TimeEstimateMs is the duration estimate in milliseconds.
-	TimeEstimateMs *int `json:"time_estimate_ms,omitempty" yaml:"time_estimate_ms,omitempty" jsonschema:"minimum=0"`
+	TimeEstimateMs *int64 `json:"time_estimate_ms,omitempty" yaml:"time_estimate_ms,omitempty" jsonschema:"minimum=0"`
 	// Priority is Marvin priority (isStarred): 0 none, 1 yellow, 2 orange, 3 red.
 	Priority *int `json:"priority,omitempty" yaml:"priority,omitempty" jsonschema:"minimum=0,maximum=3"`
 	// Frog is Marvin frog level (isFrogged): 0 none, 1 normal, 2 baby, 3 monster.

@@ -166,22 +166,58 @@ func isDuplicate(
 	return false, nil
 }
 
-// Placeholder function until we define the Marvin Update logic
-func (s *Store) Retry() error {
-	_, err := s.db.Query("SELECT * FROM github_artifacts WHERE status = 'pending_retry'")
+func (s *Store) MarkAs(
+	org, repo string,
+	number int,
+	ss StoreStatus,
+) error {
+	_, err := s.db.Exec("UPDATE github_artifacts SET status = ?, updated_at = ? WHERE org = ? AND repo = ? AND number = ?", string(ss), time.Now().Format(time.RFC3339), org, repo, number)
 	if err != nil {
-		return fmt.Errorf("failed to query pending retries: %w", err)
+		return fmt.Errorf("failed to mark as %s: %w", ss, err)
 	}
 	return nil
 }
 
-func (s *Store) MarkAsProcessed(
+func (s *Store) IncrementRetryCount(
 	org, repo string,
 	number int,
 ) error {
-	_, err := s.db.Exec("UPDATE github_artifacts SET status = ?, updated_at = ? WHERE org = ? AND repo = ? AND number = ?", string(StoreStatusProcessed), time.Now().Format(time.RFC3339), org, repo, number)
+	_, err := s.db.Exec("UPDATE github_artifacts SET retry_count = retry_count + 1 WHERE org = ? AND repo = ? AND number = ?", org, repo, number)
 	if err != nil {
-		return fmt.Errorf("failed to mark as processed: %w", err)
+		return fmt.Errorf("failed to increment retry count for org %s, repo %s, number %d: %w", org, repo, number, err)
 	}
 	return nil
+}
+
+func (s *Store) GetPendingRetryEvents(
+	threshold int,
+) ([]*event.RetryEvent, error) {
+	if threshold <= 0 {
+		return nil, fmt.Errorf("threshold must be greater than zero")
+	}
+	rows, err := s.db.Query("SELECT event_data, retry_count FROM github_artifacts WHERE status = ? AND retry_count < ?", string(StoreStatusPendingRetry), threshold)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query pending retries: %w", err)
+	}
+	defer rows.Close()
+
+	events := make([]*event.RetryEvent, 0)
+	for rows.Next() {
+		var e []byte
+		var retryCount int
+		err := rows.Scan(&e, &retryCount)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan event: %w", err)
+		}
+		var ev event.Event
+		err = json.Unmarshal(e, &ev)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal event: %w", err)
+		}
+		events = append(events, &event.RetryEvent{
+			Event:      &ev,
+			RetryCount: retryCount,
+		})
+	}
+	return events, nil
 }
