@@ -519,7 +519,7 @@ When `mode` is `polling`, AMGI fetches issues and pull requests from the GitHub 
 AMGI sends these parameters with each request:
 
 - `state=open` — Only open issues/PRs (excludes closed).
-- `sort=updated` — Order by last update time.
+- `sort=created` — Order by creation time. (See D-043 for why not `updated`: polling's semantic is "first time seen = opened", and `sort=created` enables early-break during pagination since the server-side `since` filter is update-based.)
 - `direction=desc` — Newest first.
 - `per_page` (e.g. 100) — Items per page (GitHub allows up to 100).
 - `since` (ISO 8601) — Only items updated after this timestamp. AMGI uses this for incremental sync to detect first-time-seen items (equivalent to `opened` in webhook mode).
