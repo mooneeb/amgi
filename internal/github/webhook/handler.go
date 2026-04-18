@@ -4,7 +4,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,10 +13,6 @@ import (
 	"github.com/mooneeb/amgi/internal/config"
 	"github.com/mooneeb/amgi/internal/config/resolve"
 	"github.com/mooneeb/amgi/internal/event"
-	"github.com/mooneeb/amgi/internal/filter"
-	"github.com/mooneeb/amgi/internal/marvin"
-	"github.com/mooneeb/amgi/internal/marvin/miface"
-	"github.com/mooneeb/amgi/internal/store"
 )
 
 func (wh *webhook) Handler(
@@ -72,7 +67,7 @@ func (wh *webhook) Handler(
 		return
 	}
 
-	allowed, actions, err := isActionAllowed(owner, repo, et, e.Action)
+	allowed, err := isActionAllowed(owner, repo, et, e.Action)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
 		wh.logger.Error("Failed to check if action is allowed", "action", e.Action, "error", err)
@@ -84,85 +79,11 @@ func (wh *webhook) Handler(
 		return
 	}
 
-	matched, err := isEventMatch(wh.config, owner, repo, actions, et, e)
+	err = wh.processor.Process(r.Context(), e)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
-		wh.logger.Error("Failed to match event", "error", err)
+		wh.logger.Error("Failed to process event", "error", err, "event", e, "owner", owner.Name, "repo", repo.Name)
 		return
-	}
-
-	if !matched {
-		w.WriteHeader(http.StatusOK)
-		wh.logger.Info("Payload did not match any config filters", "event", e)
-		return
-	}
-
-	i, err := isIdempotent(wh.store, e)
-	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		wh.logger.Error("Failed to check if event is idempotent", "error", err)
-		return
-	}
-
-	if !i {
-		w.WriteHeader(http.StatusOK)
-		wh.logger.Info("Event has already been processed", "event", e)
-		return
-	}
-
-	err = RetryPendingEvents(wh.store, wh.config, wh.marvin, wh.logger)
-	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		wh.logger.Error("Failed to retry events pending retry", "error", err)
-		return
-	}
-
-	mc, err := resolve.ResolveMarvinConfig(wh.config, owner, repo)
-	if err != nil {
-		w.WriteHeader(http.StatusOK)
-		wh.logger.Error("Failed to resolve Marvin config", "error", err)
-		return
-	}
-
-	var apiError *marvin.APIError
-	err = wh.marvin.AddTask(mc, e)
-	if errors.As(err, &apiError) {
-		if apiError.StatusCode == http.StatusBadRequest ||
-			apiError.StatusCode == http.StatusUnauthorized ||
-			apiError.StatusCode == http.StatusNotFound {
-
-			wh.logger.Error("Failed to create Marvin task", "error", err)
-			err = wh.store.Insert(e, store.StoreStatusFailed)
-			if err != nil {
-				w.WriteHeader(http.StatusOK)
-				wh.logger.Error("Failed to insert event into store", "error", err)
-				return
-			}
-
-		} else {
-			wh.logger.Error("Failed to create Marvin task", "error", err)
-			err = wh.store.Insert(e, store.StoreStatusPendingRetry)
-			if err != nil {
-				w.WriteHeader(http.StatusOK)
-				wh.logger.Error("Failed to insert event into store", "error", err)
-				return
-			}
-		}
-	} else if err != nil {
-		wh.logger.Error("Failed to create Marvin task", "error", err)
-		err = wh.store.Insert(e, store.StoreStatusPendingRetry)
-		if err != nil {
-			w.WriteHeader(http.StatusOK)
-			wh.logger.Error("Failed to insert event into store", "error", err)
-			return
-		}
-	} else {
-		err = wh.store.Insert(e, store.StoreStatusProcessed)
-		if err != nil {
-			w.WriteHeader(http.StatusOK)
-			wh.logger.Error("Marvin Task created succesfully. Failed to insert event into store", "error", err)
-			return
-		}
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -222,106 +143,16 @@ func isActionAllowed(
 	repo *config.Repository,
 	et event.EventType,
 	eventAction event.EventAction,
-) (bool, []string, error) {
+) (bool, error) {
 	actions, err := resolve.ResolveActions(owner, repo, et)
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to resolve actions: %w", err)
+		return false, fmt.Errorf("failed to resolve actions: %w", err)
 	}
 	switch et {
 	case event.EventTypeIssue:
-		return slices.Contains(actions, string(eventAction)), actions, nil
+		return slices.Contains(actions, string(eventAction)), nil
 	case event.EventTypePullRequest:
-		return slices.Contains(actions, string(eventAction)), actions, nil
+		return slices.Contains(actions, string(eventAction)), nil
 	}
-	return false, nil, fmt.Errorf("no actions found for event type %s", et)
-}
-
-func isEventMatch(
-	cfg *config.Config,
-	owner *config.Owner,
-	repo *config.Repository,
-	actions []string,
-	et event.EventType,
-	e *event.Event,
-) (bool, error) {
-	matched := false
-	filters, err := resolve.ResolveFilters(cfg, owner, repo)
-	if err != nil {
-		return matched, fmt.Errorf("failed to resolve filters: %w", err)
-	}
-	if filters == nil {
-		return true, nil
-	}
-	switch et {
-	case event.EventTypeIssue:
-		matched, err = filter.IsIssueMatch(e, filters.Issues, actions)
-		if err != nil {
-			return matched, fmt.Errorf("failed to match issue: %w", err)
-		}
-	case event.EventTypePullRequest:
-		matched, err = filter.IsPullRequestMatch(e, filters.PullRequests, actions)
-		if err != nil {
-			return matched, fmt.Errorf("failed to match pull request: %w", err)
-		}
-	}
-	return matched, nil
-}
-
-func isIdempotent(store *store.Store, e *event.Event) (bool, error) {
-	exists, err := store.HasEvent(e.Owner, e.Repo, e.Number)
-	if err != nil {
-		return false, fmt.Errorf("failed to check if event exists: %w", err)
-	}
-	if exists {
-		return false, nil
-	}
-	return true, nil
-}
-
-func RetryPendingEvents(
-	st *store.Store,
-	cfg *config.Config,
-	marvinAPI miface.MarvinAPI,
-	logger *slog.Logger,
-) error {
-	events, err := st.GetPendingRetryEvents(config.MaxRetryAttempts)
-	if err != nil {
-		return fmt.Errorf("failed to get pending retry events: %w", err)
-	}
-	for _, e := range events {
-		owner, repo, err := resolveOwnerRepo(cfg, e.Event)
-		if err != nil {
-			return fmt.Errorf("failed to resolve owner and repo: %w", err)
-		}
-		mc, err := resolve.ResolveMarvinConfig(cfg, owner, repo)
-		if err != nil {
-			return fmt.Errorf("failed to resolve Marvin config: %w", err)
-		}
-		err = marvinAPI.AddTask(mc, e.Event)
-		if err != nil {
-			var ss store.StoreStatus
-			retryCount := e.RetryCount + 1
-			err = st.IncrementRetryCount(e.Event.Owner, e.Event.Repo, e.Event.Number)
-			if err != nil {
-				logger.Error("failed to increment retry count", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number)
-			}
-			if retryCount >= config.MaxRetryAttempts {
-				ss = store.StoreStatusFailed
-			} else {
-				ss = store.StoreStatusPendingRetry
-			}
-			err = st.MarkAs(e.Event.Owner, e.Event.Repo, e.Event.Number, ss)
-			if err != nil {
-				logger.Error("failed to mark as", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number, "status", ss)
-			}
-			continue
-		}
-
-		err = st.MarkAs(e.Event.Owner, e.Event.Repo, e.Event.Number, store.StoreStatusProcessed)
-		if err != nil {
-			logger.Error("failed to mark as processed", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number)
-		}
-		logger.Info("Event retried successfully", "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number)
-	}
-	return nil
+	return false, fmt.Errorf("no actions found for event type %s", et)
 }

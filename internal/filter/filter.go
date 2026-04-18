@@ -12,7 +12,6 @@ import (
 func IsIssueMatch(
 	event *event.Event,
 	filters *config.IssueFilters,
-	actions []string,
 ) (bool, error) {
 
 	if filters == nil {
@@ -32,7 +31,6 @@ func IsIssueMatch(
 	m, err := isFieldMatch(event.Author, filters.Author)
 	if err != nil {
 		return false, fmt.Errorf("failed to match author: %w", err)
-
 	}
 
 	if !m {
@@ -54,7 +52,6 @@ func IsIssueMatch(
 func IsPullRequestMatch(
 	event *event.Event,
 	filters *config.PullRequestFilters,
-	actions []string,
 ) (bool, error) {
 
 	if filters == nil {
