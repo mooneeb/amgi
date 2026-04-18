@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -220,4 +221,34 @@ func (s *Store) GetPendingRetryEvents(
 		})
 	}
 	return events, nil
+}
+
+func (s *Store) GetPollCursor(
+	owner, repo string,
+) (time.Time, bool, error) {
+	var lastPolledAtStr string
+	err := s.db.QueryRow("SELECT last_polled_at FROM poll_state WHERE owner = ? AND repo = ?", owner, repo).Scan(&lastPolledAtStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("failed to query poll cursor: %w", err)
+	}
+	lastPolledAt, err := time.Parse(time.RFC3339, lastPolledAtStr)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("failed to parse poll cursor time: %w", err)
+	}
+	return lastPolledAt, true, nil
+}
+
+func (s *Store) UpsertPollCursor(
+	owner, repo string,
+	lastPolledAt time.Time,
+) error {
+	formattedTime := lastPolledAt.Format(time.RFC3339)
+	_, err := s.db.Exec("INSERT INTO poll_state (owner, repo, last_polled_at) VALUES (?, ?, ?) ON CONFLICT (owner, repo) DO UPDATE SET last_polled_at = excluded.last_polled_at", owner, repo, formattedTime)
+	if err != nil {
+		return fmt.Errorf("failed to upsert poll cursor: %w", err)
+	}
+	return nil
 }

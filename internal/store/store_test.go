@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/mooneeb/amgi/internal/event"
 	"github.com/mooneeb/amgi/internal/logger"
@@ -53,7 +54,7 @@ func TestInsert(t *testing.T) {
 	defer s.db.Close()
 
 	e := event.Event{
-		Owner:    "test",
+		Owner:  "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "test",
@@ -89,7 +90,7 @@ func TestExists(t *testing.T) {
 	defer s.db.Close()
 
 	e := event.Event{
-		Owner:    "test",
+		Owner:  "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "test",
@@ -111,7 +112,7 @@ func TestExists(t *testing.T) {
 
 	// pending_retry should also return true — Exists checks any status
 	e2 := event.Event{
-		Owner:    "test",
+		Owner:  "test",
 		Repo:   "test",
 		Number: 2,
 		Type:   "test",
@@ -144,7 +145,7 @@ func TestIsProcessed(t *testing.T) {
 
 	// processed event should return true
 	e := event.Event{
-		Owner:    "test",
+		Owner:  "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "issue",
@@ -164,7 +165,7 @@ func TestIsProcessed(t *testing.T) {
 
 	// pending_retry event should return false
 	e2 := event.Event{
-		Owner:    "test",
+		Owner:  "test",
 		Repo:   "test",
 		Number: 2,
 		Type:   "issue",
@@ -216,7 +217,7 @@ func TestInsert_Duplicate(t *testing.T) {
 	defer s.db.Close()
 
 	e := event.Event{
-		Owner:    "test",
+		Owner:  "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "issue",
@@ -258,7 +259,7 @@ func TestMarkAs(t *testing.T) {
 	defer s.db.Close()
 
 	e := event.Event{
-		Owner:    "test",
+		Owner:  "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "issue",
@@ -309,7 +310,7 @@ func TestIncrementRetryCount(t *testing.T) {
 	defer s.db.Close()
 
 	e := event.Event{
-		Owner:    "test",
+		Owner:  "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "issue",
@@ -346,7 +347,7 @@ func TestGetPendingRetryEvents(t *testing.T) {
 	}
 	defer s.db.Close()
 	e := event.Event{
-		Owner:    "test",
+		Owner:  "test",
 		Repo:   "test",
 		Number: 1,
 		Type:   "issue",
@@ -363,5 +364,151 @@ func TestGetPendingRetryEvents(t *testing.T) {
 	}
 	if len(events) != 1 {
 		t.Errorf("expected 1 event, got %d", len(events))
+	}
+}
+
+func TestUpsertPollCursor_Insert(t *testing.T) {
+	tmpFile := t.TempDir() + "/test.db"
+	os.Setenv("AMGI_DB_PATH", tmpFile)
+	defer os.Unsetenv("AMGI_DB_PATH")
+
+	s, err := New(logger.New())
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	defer s.db.Close()
+
+	owner := "test-owner"
+	repo := "test-repo"
+	lastPolledAt := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+
+	err = s.UpsertPollCursor(owner, repo, lastPolledAt)
+	if err != nil {
+		t.Fatalf("UpsertPollCursor() failed: %v", err)
+	}
+
+	// Verify the cursor was inserted (scan as string and parse)
+	var storedTimeStr string
+	err = s.db.QueryRow("SELECT last_polled_at FROM poll_state WHERE owner = ? AND repo = ?", owner, repo).Scan(&storedTimeStr)
+	if err != nil {
+		t.Fatalf("failed to query poll_state: %v", err)
+	}
+	storedTime, err := time.Parse(time.RFC3339, storedTimeStr)
+	if err != nil {
+		t.Fatalf("failed to parse stored time: %v", err)
+	}
+	if !storedTime.Equal(lastPolledAt) {
+		t.Errorf("expected last_polled_at %v, got %v", lastPolledAt, storedTime)
+	}
+}
+
+func TestUpsertPollCursor_Update(t *testing.T) {
+	tmpFile := t.TempDir() + "/test.db"
+	os.Setenv("AMGI_DB_PATH", tmpFile)
+	defer os.Unsetenv("AMGI_DB_PATH")
+
+	s, err := New(logger.New())
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	defer s.db.Close()
+
+	owner := "test-owner"
+	repo := "test-repo"
+	initialTime := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+	updatedTime := time.Date(2024, 1, 16, 14, 45, 0, 0, time.UTC)
+
+	// Insert initial cursor
+	err = s.UpsertPollCursor(owner, repo, initialTime)
+	if err != nil {
+		t.Fatalf("first UpsertPollCursor() failed: %v", err)
+	}
+
+	// Update the cursor
+	err = s.UpsertPollCursor(owner, repo, updatedTime)
+	if err != nil {
+		t.Fatalf("second UpsertPollCursor() failed: %v", err)
+	}
+
+	// Verify only one row exists and it has the updated time (scan as string)
+	var storedTimeStr string
+	err = s.db.QueryRow("SELECT last_polled_at FROM poll_state WHERE owner = ? AND repo = ?", owner, repo).Scan(&storedTimeStr)
+	if err != nil {
+		t.Fatalf("failed to query poll_state: %v", err)
+	}
+	storedTime, err := time.Parse(time.RFC3339, storedTimeStr)
+	if err != nil {
+		t.Fatalf("failed to parse stored time: %v", err)
+	}
+	if !storedTime.Equal(updatedTime) {
+		t.Errorf("expected last_polled_at %v after update, got %v", updatedTime, storedTime)
+	}
+
+	// Verify only one row exists
+	var count int
+	err = s.db.QueryRow("SELECT count(*) FROM poll_state WHERE owner = ? AND repo = ?", owner, repo).Scan(&count)
+	if err != nil {
+		t.Fatalf("failed to count rows: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected 1 row, got %d", count)
+	}
+}
+
+func TestGetPollCursor_NotFound(t *testing.T) {
+	tmpFile := t.TempDir() + "/test.db"
+	os.Setenv("AMGI_DB_PATH", tmpFile)
+	defer os.Unsetenv("AMGI_DB_PATH")
+
+	s, err := New(logger.New())
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	defer s.db.Close()
+
+	// Query for non-existent cursor
+	cursor, found, err := s.GetPollCursor("ghost-owner", "ghost-repo")
+	if err != nil {
+		t.Fatalf("GetPollCursor() failed: %v", err)
+	}
+	if found {
+		t.Errorf("GetPollCursor() returned found=true for non-existent cursor, expected false")
+	}
+	if !cursor.IsZero() {
+		t.Errorf("GetPollCursor() returned non-zero time for non-existent cursor: %v", cursor)
+	}
+}
+
+func TestGetPollCursor_Found(t *testing.T) {
+	tmpFile := t.TempDir() + "/test.db"
+	os.Setenv("AMGI_DB_PATH", tmpFile)
+	defer os.Unsetenv("AMGI_DB_PATH")
+
+	s, err := New(logger.New())
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	defer s.db.Close()
+
+	owner := "test-owner"
+	repo := "test-repo"
+	expectedTime := time.Date(2024, 6, 20, 8, 15, 30, 0, time.UTC)
+
+	// Insert cursor
+	err = s.UpsertPollCursor(owner, repo, expectedTime)
+	if err != nil {
+		t.Fatalf("UpsertPollCursor() failed: %v", err)
+	}
+
+	// Retrieve cursor
+	cursor, found, err := s.GetPollCursor(owner, repo)
+	if err != nil {
+		t.Fatalf("GetPollCursor() failed: %v", err)
+	}
+	if !found {
+		t.Errorf("GetPollCursor() returned found=false for existing cursor, expected true")
+	}
+	if !cursor.Equal(expectedTime) {
+		t.Errorf("GetPollCursor() returned time %v, expected %v", cursor, expectedTime)
 	}
 }
