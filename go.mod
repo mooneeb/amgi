@@ -3,7 +3,7 @@ module github.com/mooneeb/amgi
 go 1.26
 
 require (
-	github.com/google/go-github/v50 v50.2.0
+	github.com/google/go-github/v84 v84.0.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/kaptinlin/jsonschema v0.7.7
 	golang.org/x/oauth2 v0.36.0
@@ -19,7 +19,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
-	github.com/google/go-querystring v1.1.0 // indirect
+	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/kaptinlin/go-i18n v0.3.0 // indirect
 	github.com/kaptinlin/jsonpointer v0.4.17 // indirect
