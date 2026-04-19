@@ -1,0 +1,23 @@
+# Version control
+.git/
+.gitignore
+
+# Personal/local state (gitignored equivalents)
+.local/
+*.db
+*.db-journal
+
+# Design docs — not needed for build
+.amgi/
+docs/
+
+# Markdown — not consumed at build/runtime
+*.md
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# Claude artifacts
+.claude/
