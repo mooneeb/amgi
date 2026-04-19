@@ -321,7 +321,7 @@ Templates use [Go template](https://pkg.go.dev/text/template) syntax. Variables 
 - `Author`
 - `Branch` (PR only)
 - `Reviewers` (comma-separated, PR only)
-- `HtmlUrl`
+- `URL` (the GitHub `html_url` of the issue or PR)
 
 > ⚠️ **Warning:** When `auto_complete` is enabled, Marvin interprets certain characters in the title as input bar shortcuts (e.g. `#` for category, `@` for label, `+` for schedule). For the full list of keybindings, see [Keyboard shortcuts in Marvin](https://help.amazingmarvin.com/en/articles/4848263-keyboard-shortcuts-in-marvin#h_43115cf851). For how auto_complete affects title parsing, see [Autocomplete](#autocomplete).
 
@@ -348,7 +348,7 @@ note_template: "{{.Body}}"
 note_template: |
   **Author:** {{.Author}}
   **Repo:** {{.Owner}}/{{.Repo}}
-  **Link:** {{.HtmlUrl}}
+  **Link:** {{.URL}}
   ---
   {{.Body}}
 
@@ -460,7 +460,7 @@ marvin:
         note_template: |
           **Author:** {{.Author}}
           **Assignees:** {{.Assignees}}
-          **Link:** {{.HtmlUrl}}
+          **Link:** {{.URL}}
           ---
           {{.Body}}
     - id: pr-config
@@ -472,7 +472,7 @@ marvin:
           **Author:** {{.Author}}
           **Branch:** {{.Branch}}
           **Reviewers:** {{.Reviewers}}
-          **Link:** {{.HtmlUrl}}
+          **Link:** {{.URL}}
           ---
           {{.Body}}
 ```

@@ -1,0 +1,158 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# AMGI example configuration
+#
+# This file walks through every major feature with inline commentary. Copy it,
+# strip the comments you don't need, and edit owner/repo names and Marvin
+# template content to fit your workflow.
+#
+# Secrets are NEVER placed in this file. GitHub and Marvin tokens come from
+# environment variables (see README.md and CONTRIBUTING.md for the exact
+# variable names).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Config schema version. Only "1" exists today.
+version: "1"
+
+# ── Global filters (optional) ────────────────────────────────────────────────
+#
+# If present, these apply to every issue and pull request from every watched
+# repo UNLESS an owner-level or repo-level block overrides them. If omitted,
+# AMGI creates a task for every issue/PR it sees (subject to per-owner
+# actions and idempotency).
+#
+# Filter operators are Kubernetes-inspired: `in`, `notIn`, `exists`,
+# `doesNotExist`. All conditions are ANDed within and across fields.
+#
+# - For MULTI-VALUE fields (labels, assignees, reviewers): `in`/`notIn` use
+#   exact string matching.
+# - For SINGLE-VALUE fields (title, author, branch): `in`/`notIn` are
+#   treated as Go regex patterns.
+filters:
+  issues:
+    labels:
+      in: [bug, enhancement, priority-high]
+    assignees:
+      exists: true              # only issues that have at least one assignee
+  pull_requests:
+    branches:
+      notIn: [dependabot.*]     # regex — skip dependency-bump PRs
+    reviewers:
+      exists: true              # only PRs with at least one requested reviewer
+
+# ── Webhook server (required when any owner uses `mode: webhook`) ────────────
+webhook_server:
+  port: 8080                    # omit to use default 8080
+  path: /webhooks/github        # omit to use default /webhooks/github
+                                # MUST match what you configure in GitHub's
+                                # webhook settings page.
+
+# ── GitHub watched owners and repos ──────────────────────────────────────────
+github:
+  owners:
+    # ─────────────────────────────────────────────────────────────────
+    # Example 1 — webhook mode
+    # Real-time events. Requires GITHUB_WEBHOOK_SECRET env var and a
+    # publicly reachable HTTPS URL (use a tunnel like cloudflared or a
+    # reverse proxy in front of AMGI).
+    # ─────────────────────────────────────────────────────────────────
+    - name: acme-corp
+      mode: webhook
+      marvin_config_id: default-tasks
+      # Which webhook action types should create Marvin tasks.
+      # Defaults (if omitted):
+      #   issues:        [opened, assigned]
+      #   pull_requests: [review_requested, assigned]
+      actions:
+        issues: [opened, assigned]
+        pull_requests: [review_requested, assigned]
+      # Owner-level filter — overrides global `filters` for every repo
+      # under acme-corp. Leave out to inherit global filters.
+      filters:
+        issues:
+          labels:
+            in: [bug, customer-impact]
+      repositories:
+        - name: api              # inherits owner-level filters
+        - name: web
+          # Repo-level config — overrides everything from owner + global.
+          marvin_config_id: pr-reviews
+          actions:
+            # Only PR review_requested; no issues, no PR assigned events.
+            pull_requests: [review_requested]
+          filters:
+            pull_requests:
+              branches:
+                in: [main, release/.*]
+
+    # ─────────────────────────────────────────────────────────────────
+    # Example 2 — polling mode
+    # Requires GITHUB_TOKEN env var (classic PAT with `repo` or
+    # `public_repo`, or fine-grained PAT with Issues + PR read).
+    # No inbound HTTP needed — use polling in firewalled or
+    # tunnel-free environments.
+    # ─────────────────────────────────────────────────────────────────
+    - name: personal-user
+      mode: polling
+      marvin_config_id: default-tasks
+      # Poll frequency in seconds. Default is 300s (5 min) if omitted.
+      # For active repos, 60-120s is sensible; for quiet repos, 600-900s
+      # saves API quota.
+      polling_interval_seconds: 300
+      repositories:
+        - name: my-project
+        - name: side-project
+
+# ── Marvin destinations ──────────────────────────────────────────────────────
+#
+# A "Marvin config" says where a task lands, which labels get attached, and
+# how title/note are rendered. Events pick a config by `marvin_config_id`.
+marvin:
+  configs:
+    # ─────────────────────────────────────────────────────────────────
+    # default-tasks — generic task for any inbound issue/PR
+    # ─────────────────────────────────────────────────────────────────
+    - id: default-tasks
+      # The parent list/category. Use `list_id` (Marvin ID) OR `list_name`
+      # (resolved by title). If both are set, list_id wins. If both are
+      # omitted, the task lands in the Marvin Inbox.
+      # list_id: "abc123..."
+      # list_name: "Inbox"        # name resolution currently deferred;
+                                  # omit for now to land in Inbox.
+      # label_ids: ["xyz456..."]
+      # label_names: [github]     # name resolution currently deferred.
+      task:
+        # Go text/template. Variables available on the event:
+        #   .Type .Owner .Repo .Number .Title .Body .State .Action
+        #   .Labels .Assignees .Author .Branch .Reviewers .URL
+        title_template: "{{.Type}} #{{.Number}}: {{.Title}}"
+        note_template: |
+          **Repo:** {{.Owner}}/{{.Repo}}
+          **Author:** {{.Author}}
+          **Link:** {{.URL}}
+
+          {{.Body}}
+
+    # ─────────────────────────────────────────────────────────────────
+    # pr-reviews — specialized config for PR review requests
+    # Sends to a different Marvin category, with fields tuned for
+    # review context (branch, reviewers).
+    # ─────────────────────────────────────────────────────────────────
+    - id: pr-reviews
+      # auto_complete: false      # disable Marvin's `#`, `@`, `+` title
+                                  # operator parsing. Default is true.
+                                  # Set false if your templates contain
+                                  # these characters literally.
+      task:
+        title_template: "Review PR #{{.Number}} in {{.Owner}}/{{.Repo}}"
+        note_template: |
+          **Author:** {{.Author}}
+          **Branch:** {{.Branch}}
+          **Reviewers:** {{.Reviewers}}
+          **Link:** {{.URL}}
+
+          {{.Body}}
+        # Optional scheduling and classification fields (all optional):
+        # day: "2026-04-20"
+        # due_date: "2026-04-22"
+        # priority: 2             # 0=none, 1=yellow, 2=orange, 3=red
+        # time_estimate_ms: 900000   # 15 minutes, in milliseconds

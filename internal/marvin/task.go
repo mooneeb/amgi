@@ -134,8 +134,10 @@ func (m *marvin) resolveParentID(cfg *config.MarvinConfig) (string, error) {
 	if cfg.ListName == "" {
 		return "", nil
 	}
-	// TODO: GET /api/categories, match by title, return _id
-	return "", fmt.Errorf("list_name resolution not yet implemented")
+	// Name-to-ID resolution (via GET /api/categories) is planned; see
+	// docs/Roadmap.md "Marvin name-to-ID resolution". Until then, supply
+	// list_id directly.
+	return "", fmt.Errorf("list_name resolution not yet implemented; use list_id instead")
 }
 
 // resolveLabelIDs merges explicit LabelIDs with any LabelNames resolved via
@@ -147,8 +149,10 @@ func (m *marvin) resolveLabelIDs(cfg *config.MarvinConfig) ([]string, error) {
 	if len(cfg.LabelNames) == 0 {
 		return ids, nil
 	}
-	// TODO: GET /api/labels, match by title, append resolved IDs
-	return nil, fmt.Errorf("label_names resolution not yet implemented")
+	// Name-to-ID resolution (via GET /api/labels) is planned; see
+	// docs/Roadmap.md "Marvin name-to-ID resolution". Until then, supply
+	// label_ids directly.
+	return nil, fmt.Errorf("label_names resolution not yet implemented; use label_ids instead")
 }
 
 // dailySections: values per Marvin OpenAPI spec (dailySection enum).
