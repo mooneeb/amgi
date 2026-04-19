@@ -2,9 +2,11 @@ package resolve
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/mooneeb/amgi/internal/config"
 	"github.com/mooneeb/amgi/internal/event"
+	"github.com/mooneeb/amgi/internal/github/polling/constants"
 )
 
 func ResolveOwner(
@@ -117,4 +119,14 @@ func resolveMarvinConfigId(
 		}
 	}
 	return nil, fmt.Errorf("marvin config id %s not found", id)
+}
+
+func ResolvePollingInterval(
+	owner *config.Owner,
+) (time.Duration, error) {
+	if owner.PollingIntervalSeconds != nil {
+		return time.Duration(*owner.PollingIntervalSeconds) * time.Second, nil
+	} else {
+		return constants.DefaultPollingInterval, nil
+	}
 }

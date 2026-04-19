@@ -35,6 +35,8 @@ go.work.sum
 .local/
 .cursor/
 .amgi/
+.claude/
+smoke-config.yaml
 
 # agentic files
 CLAUDE.md

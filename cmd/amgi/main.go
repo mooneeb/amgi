@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"github.com/mooneeb/amgi/internal/config"
+	"github.com/mooneeb/amgi/internal/config/resolve"
 	"github.com/mooneeb/amgi/internal/config/validate"
+	igithub "github.com/mooneeb/amgi/internal/github"
+	"github.com/mooneeb/amgi/internal/github/polling"
 	"github.com/mooneeb/amgi/internal/github/webhook"
 	"github.com/mooneeb/amgi/internal/logger"
 	"github.com/mooneeb/amgi/internal/marvin"
@@ -27,11 +30,6 @@ import (
 func main() {
 
 	l := logger.New()
-	s := os.Getenv("GITHUB_WEBHOOK_SECRET")
-	if s == "" {
-		l.Error("GITHUB_WEBHOOK_SECRET is not set")
-		os.Exit(1)
-	}
 	m := os.Getenv("MARVIN_API_TOKEN")
 	if m == "" {
 		l.Error("MARVIN_API_TOKEN is not set")
@@ -71,6 +69,11 @@ func main() {
 	var wg sync.WaitGroup
 
 	if hasWebhookModeConfigured(c) {
+		s := os.Getenv("GITHUB_WEBHOOK_SECRET")
+		if s == "" {
+			l.Error("GITHUB_WEBHOOK_SECRET is not set")
+			os.Exit(1)
+		}
 		wh := webhook.New(l, s, c, p)
 		port := config.DefaultWebhookPort
 		path := config.DefaultWebhookPath
@@ -105,6 +108,45 @@ func main() {
 				l.Error("Failed to shutdown AMGI Server", "error", err)
 			}
 		}()
+	}
+
+	if hasPollingModeConfigured(c) {
+		ghToken := os.Getenv("GITHUB_TOKEN")
+		if ghToken == "" {
+			l.Error("GITHUB_TOKEN is not set")
+			os.Exit(1)
+		}
+		ghClient := igithub.New(l, ghToken)
+
+		for _, owner := range c.GitHub.Owners {
+			itv, err := resolve.ResolvePollingInterval(&owner)
+			if err != nil {
+				l.Error("Failed to resolve polling interval", "error", err)
+				continue
+			}
+			for _, repository := range owner.Repositories {
+				if isPollingMode(&owner) {
+					wg.Add(1)
+					go func(ownerName string, repoName string, interval time.Duration) {
+						defer wg.Done()
+						poller := polling.NewPoller(
+							l,
+							ghClient,
+							store,
+							p,
+							ownerName,
+							repoName,
+							interval,
+						)
+						err := poller.Run(ctx)
+						if err != nil {
+							l.Error("Failed to run poller", "error", err)
+							return
+						}
+					}(owner.Name, repository.Name, itv)
+				}
+			}
+		}
 	}
 
 	wg.Add(1)
@@ -172,4 +214,8 @@ func hasPollingModeConfigured(cfg *config.Config) bool {
 		}
 	}
 	return false
+}
+
+func isPollingMode(owner *config.Owner) bool {
+	return owner.Mode == config.ModePolling
 }
