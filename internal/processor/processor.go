@@ -47,29 +47,52 @@ func (p *processor) Process(
 		return fmt.Errorf("failed to resolve Marvin config: %w", err)
 	}
 
-	var apiError *marvin.APIError
-	err = p.marvinAPI.AddTask(mc, e)
-	if errors.As(err, &apiError) {
-		if apiError.StatusCode == http.StatusBadRequest ||
-			apiError.StatusCode == http.StatusUnauthorized ||
-			apiError.StatusCode == http.StatusNotFound {
+	err = p.marvinAPI.AddTask(ctx, mc, e)
+	if err == nil {
+		err = p.store.Insert(e, store.StoreStatusProcessed)
+		if err != nil {
+			return fmt.Errorf("failed to insert event into store: %w", err)
+		}
+		p.logger.Info("task created",
+			"owner", owner.Name, "repo", repo.Name,
+			"number", e.Number, "type", e.Type)
+		return nil
+	}
+
+	var (
+		budgetErr *marvin.DailyBudgetExceededError
+		apiErr    *marvin.APIError
+	)
+
+	switch {
+	case errors.As(err, &budgetErr):
+		p.logger.Warn("daily budget exceeded", "resets_at", budgetErr.ResetsAt, "owner", owner.Name, "repo", repo.Name, "number", e.Number)
+		err = p.store.Insert(e, store.StoreStatusPendingRetry)
+		if err != nil {
+			return fmt.Errorf("failed to insert event into store: %w", err)
+		}
+	case errors.As(err, &apiErr):
+		if isPermanentAPIError(apiErr) {
+			p.logger.Error("permanent API error", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Number)
 			err = p.store.Insert(e, store.StoreStatusFailed)
 			if err != nil {
 				return fmt.Errorf("failed to insert event into store: %w", err)
 			}
-
 		} else {
+			p.logger.Warn("non-permanent API error. setting event to pending retry", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Number)
 			err = p.store.Insert(e, store.StoreStatusPendingRetry)
 			if err != nil {
 				return fmt.Errorf("failed to insert event into store: %w", err)
 			}
 		}
-	} else {
-		err = p.store.Insert(e, store.StoreStatusProcessed)
+	default:
+		p.logger.Warn("unknown error. setting event to pending retry", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Number)
+		err = p.store.Insert(e, store.StoreStatusPendingRetry)
 		if err != nil {
 			return fmt.Errorf("failed to insert event into store: %w", err)
 		}
 	}
+
 	return nil
 }
 
@@ -80,6 +103,10 @@ func (p *processor) RetryPending(
 	if err != nil {
 		return fmt.Errorf("failed to get pending retry events: %w", err)
 	}
+	if len(events) == 0 {
+		return nil
+	}
+	p.logger.Info("retry pass starting", "pending_retry_count", len(events))
 	for _, e := range events {
 		owner, repo, err := resolveOwnerRepo(p.cfg, e.Event)
 		if err != nil {
@@ -89,19 +116,31 @@ func (p *processor) RetryPending(
 		if err != nil {
 			return fmt.Errorf("failed to resolve Marvin config: %w", err)
 		}
-		err = p.marvinAPI.AddTask(mc, e.Event)
+		var budgetErr *marvin.DailyBudgetExceededError
+		err = p.marvinAPI.AddTask(ctx, mc, e.Event)
 		if err != nil {
+			if errors.As(err, &budgetErr) {
+				p.logger.Warn("retry skipped: marvin daily budget exhausted",
+					"resets_at", budgetErr.ResetsAt, "owner", e.Event.Owner, "repo", e.Event.Repo, "number", e.Event.Number)
+				continue
+			}
 			var ss store.StoreStatus
 			retryCount := e.RetryCount + 1
-			err = p.store.IncrementRetryCount(e.Event.Owner, e.Event.Repo, e.Event.Number)
-			if err != nil {
-				p.logger.Error("failed to increment retry count", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number)
-			}
 			if retryCount >= config.MaxRetryAttempts {
 				ss = store.StoreStatusFailed
 			} else {
 				ss = store.StoreStatusPendingRetry
 			}
+			p.logger.Warn("retry attempt failed",
+				"error", err,
+				"owner", owner.Name, "repo", repo.Name, "number", e.Event.Number,
+				"retry_count", retryCount, "new_status", ss)
+
+			err = p.store.IncrementRetryCount(e.Event.Owner, e.Event.Repo, e.Event.Number)
+			if err != nil {
+				p.logger.Error("failed to increment retry count", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number)
+			}
+
 			err = p.store.MarkAs(e.Event.Owner, e.Event.Repo, e.Event.Number, ss)
 			if err != nil {
 				p.logger.Error("failed to mark as", "error", err, "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number, "status", ss)
@@ -172,4 +211,14 @@ func isIdempotent(store *store.Store, e *event.Event) (bool, error) {
 		return false, nil
 	}
 	return true, nil
+}
+
+// isPermanentAPIError returns true if the API error should not be retried.
+func isPermanentAPIError(apiErr *marvin.APIError) bool {
+	switch apiErr.StatusCode {
+	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusNotFound:
+		return true
+	default:
+		return false
+	}
 }

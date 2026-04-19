@@ -2,11 +2,13 @@ package marvin
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/mooneeb/amgi/internal/config"
 	"github.com/mooneeb/amgi/internal/event"
@@ -18,6 +20,8 @@ const (
 	categoriesGETEndpoint = baseURL + "/api/categories"
 	labelsGETEndpoint     = baseURL + "/api/labels"
 	testPOSTEndpoint      = baseURL + "/api/test"
+	// As per Marvin API rate limits documentation: https://github.com/amazingmarvin/MarvinAPI/wiki/Rate-limits
+	defaultDailyMax = 1440
 )
 
 // AddTaskRequest is the JSON body for POST /api/addTask (Marvin OpenAPI CreateTaskRequest).
@@ -51,19 +55,22 @@ type addTaskRequest struct {
 	TimeZoneOffset   *int     `json:"timeZoneOffset,omitempty"`
 }
 
-type APIError struct {
-	StatusCode int
-	Body       string
-}
-
-func (a *APIError) Error() string {
-	return fmt.Sprintf("Status Code: %v - %s", a.StatusCode, a.Body)
-}
-
 func (m *marvin) AddTask(
+	ctx context.Context,
 	marvinConfig *config.MarvinConfig,
 	event *event.Event,
 ) error {
+
+	// Throttle requests to 1 per second as per Marvin API rate limits.
+	if err := m.perSecond.Wait(ctx); err != nil {
+		return fmt.Errorf("wait for per second rate limit: %w", err)
+	}
+
+	// Throttle requests to 1440 per day as per Marvin API rate limits.
+	if err := m.consumeDailyBudget(); err != nil {
+		return err
+	}
+
 	title, note, err := renderTemplates(
 		marvinConfig.Task.TitleTemplate,
 		marvinConfig.Task.NoteTemplate,
@@ -90,7 +97,7 @@ func (m *marvin) AddTask(
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequest(http.MethodPost, addTaskPOSTEndpoint, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, addTaskPOSTEndpoint, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create HTTP request: %w", err)
 	}
@@ -182,4 +189,29 @@ func buildAddTaskRequest(
 	}
 
 	return req
+}
+
+func nextUTCMidnight(now time.Time) time.Time {
+	utc := now.UTC()
+	return time.Date(utc.Year(), utc.Month(), utc.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
+}
+
+func (m *marvin) consumeDailyBudget() error {
+	m.dailyMu.Lock()
+	defer m.dailyMu.Unlock()
+
+	now := time.Now().UTC()
+	if !now.Before(m.dailyResetAt) {
+		m.dailyCount = 0
+		m.dailyResetAt = nextUTCMidnight(now)
+	}
+
+	if m.dailyCount >= m.dailyMax {
+		return &DailyBudgetExceededError{
+			ResetsAt: m.dailyResetAt,
+		}
+	}
+
+	m.dailyCount++
+	return nil
 }
