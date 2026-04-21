@@ -37,6 +37,7 @@ go.work.sum
 .amgi/
 .claude/
 smoke-config.yaml
+MarvinAPI.wiki/
 
 # agentic files
 CLAUDE.md

@@ -3,6 +3,3 @@ contact_links:
   - name: Security vulnerability
     url: https://github.com/mooneeb/amgi/security/advisories/new
     about: Please report security issues privately — see SECURITY.md.
-  - name: Question or discussion
-    url: https://github.com/mooneeb/amgi/discussions
-    about: For general questions or design discussions (once Discussions are enabled).

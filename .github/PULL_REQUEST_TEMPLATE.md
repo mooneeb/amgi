@@ -1,7 +1,9 @@
 <!--
-Thanks for the PR. A couple of notes to make review easier:
-  - If this PR is for something non-trivial, please link an issue that
-    established the scope/design before code was written.
+Thanks for the PR. A few non-negotiables to make review work:
+  - Every PR must link a related GitHub issue (see "Related issues"
+    below). File one first if it doesn't exist yet — even a two-line
+    issue is enough. PRs without a linked issue will be closed with
+    a polite pointer to open one first.
   - Keep the PR focused on one coherent change. Unrelated fixes are
     welcome — in a separate PR.
 -->
@@ -10,9 +12,16 @@ Thanks for the PR. A couple of notes to make review easier:
 
 <!-- One or two sentences on what this PR changes and why. -->
 
-## Related issues
+## Related issue (required)
 
-<!-- "Closes #123" or "Part of #456". Omit if none. -->
+<!--
+Every PR must link a GitHub issue. Use "Closes #123" to auto-close
+on merge, or "Part of #456" for PRs that address a portion of a
+larger issue. If no issue exists yet, please file one first and
+reference it here.
+-->
+
+Closes #
 
 ## How this was tested
 
@@ -24,6 +33,7 @@ confirm no regressions.
 
 ## Checklist
 
+- [ ] This PR links a GitHub issue (see "Related issue" above)
 - [ ] `go build ./...` and `go vet ./...` both pass locally
 - [ ] `go test -race ./...` passes locally
 - [ ] Documentation updated if behavior changed (`README.md`, `docs/architecture.md`, config schema)

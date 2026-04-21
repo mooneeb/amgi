@@ -9,9 +9,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ci:
-    name: build + vet + test
+    name: fmt + vet + build + test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -25,6 +29,16 @@ jobs:
 
       - name: Verify modules
         run: go mod verify
+
+      - name: Format check (gofmt -s)
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "::error::gofmt -s violations found. Files:"
+            gofmt -s -l .
+            echo ""
+            echo "Fix with: gofmt -s -w ."
+            exit 1
+          fi
 
       - name: Vet
         run: go vet ./...
