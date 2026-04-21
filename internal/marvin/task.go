@@ -15,11 +15,7 @@ import (
 )
 
 const (
-	baseURL               = "https://serv.amazingmarvin.com"
-	addTaskPOSTEndpoint   = baseURL + "/api/addTask"
-	categoriesGETEndpoint = baseURL + "/api/categories"
-	labelsGETEndpoint     = baseURL + "/api/labels"
-	testPOSTEndpoint      = baseURL + "/api/test"
+	baseURL = "https://serv.amazingmarvin.com"
 	// As per Marvin API rate limits documentation: https://github.com/amazingmarvin/MarvinAPI/wiki/Rate-limits
 	defaultDailyMax = 1440
 )
@@ -61,6 +57,29 @@ func (m *marvin) AddTask(
 	event *event.Event,
 ) error {
 
+	// Render templates first — fails early with no API cost on bad templates.
+	title, note, err := renderTemplates(
+		marvinConfig.Task.TitleTemplate,
+		marvinConfig.Task.NoteTemplate,
+		event,
+	)
+	if err != nil {
+		return fmt.Errorf("render templates: %w", err)
+	}
+
+	// Resolve list_name + label_names → Marvin _id values. Common case hits the
+	// cache populated at startup; cache-miss triggers a single refresh before
+	// erroring (see resolver.go). Resolve before consuming daily budget so a
+	// resolve failure doesn't waste a budget slot.
+	parentID, err := m.resolveList(ctx, marvinConfig.ListName)
+	if err != nil {
+		return fmt.Errorf("resolve list_name: %w", err)
+	}
+	labelIDs, err := m.resolveLabels(ctx, marvinConfig.LabelNames)
+	if err != nil {
+		return fmt.Errorf("resolve label_names: %w", err)
+	}
+
 	// Throttle requests to 1 per second as per Marvin API rate limits.
 	if err := m.perSecond.Wait(ctx); err != nil {
 		return fmt.Errorf("wait for per second rate limit: %w", err)
@@ -71,25 +90,6 @@ func (m *marvin) AddTask(
 		return err
 	}
 
-	title, note, err := renderTemplates(
-		marvinConfig.Task.TitleTemplate,
-		marvinConfig.Task.NoteTemplate,
-		event,
-	)
-	if err != nil {
-		return fmt.Errorf("render templates: %w", err)
-	}
-
-	parentID, err := m.resolveParentID(marvinConfig)
-	if err != nil {
-		return fmt.Errorf("resolve parent ID: %w", err)
-	}
-
-	labelIDs, err := m.resolveLabelIDs(marvinConfig)
-	if err != nil {
-		return fmt.Errorf("resolve label IDs: %w", err)
-	}
-
 	req := buildAddTaskRequest(title, note, parentID, labelIDs, &marvinConfig.Task)
 
 	body, err := json.Marshal(req)
@@ -97,7 +97,7 @@ func (m *marvin) AddTask(
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, addTaskPOSTEndpoint, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, m.baseURL+"/api/addTask", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create HTTP request: %w", err)
 	}
@@ -123,36 +123,6 @@ func (m *marvin) AddTask(
 	}
 
 	return nil
-}
-
-// resolveParentID returns the Marvin parentId for the task. ListID takes
-// precedence; if empty, ListName is resolved via GET /api/categories.
-func (m *marvin) resolveParentID(cfg *config.MarvinConfig) (string, error) {
-	if cfg.ListID != "" {
-		return cfg.ListID, nil
-	}
-	if cfg.ListName == "" {
-		return "", nil
-	}
-	// Name-to-ID resolution (via GET /api/categories) is planned; see
-	// docs/Roadmap.md "Marvin name-to-ID resolution". Until then, supply
-	// list_id directly.
-	return "", fmt.Errorf("list_name resolution not yet implemented; use list_id instead")
-}
-
-// resolveLabelIDs merges explicit LabelIDs with any LabelNames resolved via
-// GET /api/labels.
-func (m *marvin) resolveLabelIDs(cfg *config.MarvinConfig) ([]string, error) {
-	ids := make([]string, len(cfg.LabelIDs))
-	copy(ids, cfg.LabelIDs)
-
-	if len(cfg.LabelNames) == 0 {
-		return ids, nil
-	}
-	// Name-to-ID resolution (via GET /api/labels) is planned; see
-	// docs/Roadmap.md "Marvin name-to-ID resolution". Until then, supply
-	// label_ids directly.
-	return nil, fmt.Errorf("label_names resolution not yet implemented; use label_ids instead")
 }
 
 // dailySections: values per Marvin OpenAPI spec (dailySection enum).

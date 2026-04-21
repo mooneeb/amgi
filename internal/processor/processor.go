@@ -110,11 +110,15 @@ func (p *processor) RetryPending(
 	for _, e := range events {
 		owner, repo, err := resolveOwnerRepo(p.cfg, e.Event)
 		if err != nil {
-			return fmt.Errorf("failed to resolve owner and repo: %w", err)
+			p.logger.Warn("retry skipped: failed to resolve owner/repo",
+				"error", err, "owner", e.Event.Owner, "repo", e.Event.Repo, "number", e.Event.Number)
+			continue
 		}
 		mc, err := resolve.ResolveMarvinConfig(p.cfg, owner, repo)
 		if err != nil {
-			return fmt.Errorf("failed to resolve Marvin config: %w", err)
+			p.logger.Warn("retry skipped: failed to resolve Marvin config",
+				"error", err, "owner", e.Event.Owner, "repo", e.Event.Repo, "number", e.Event.Number)
+			continue
 		}
 		var budgetErr *marvin.DailyBudgetExceededError
 		err = p.marvinAPI.AddTask(ctx, mc, e.Event)

@@ -91,7 +91,7 @@ Receives GitHub events and normalizes them into an internal issue/PR representat
 
 Decides whether an event should result in a Marvin task based on configuration. Applies filter rules (labels, assignees, author, title, branches, reviewers) using operators `in`, `notIn`, `exists`, and `doesNotExist`. All conditions are ANDed; global and per-repo filters apply.
 
-If no filters re defined, all issues and/or Pull Requests are considered as matching.
+If no filters are defined, all issues and/or Pull Requests are considered as matching.
 
 **Inputs:** Normalized event and filter configuration.
 
@@ -213,10 +213,8 @@ Config fields map to the addTask API as follows:
 | --------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `title_template` (rendered) | `title`            | Task title. Variables from normalized event (e.g.`{{.Title}}`, `{{.Repo}}`, `{{.Number}} `).                                                             |
 | `note_template` (rendered)  | `note`             | Task body.                                                                                                                                             |
-| `list_id`                   | `parentId`         | Category or project ID;`"unassigned"` for Inbox.                                                                                                       |
-| `list_name`                 | `parentId`         | Resolved via GET /api/categories; ignored if`list_id` is set.                                                                                          |
-| `label_ids`                 | `labelIds`         | Label IDs to attach.                                                                                                                                   |
-| `label_names`               | `labelIds`         | Resolved via GET /api/labels.                                                                                                                          |
+| `list_name`                 | `parentId`         | Marvin category/project title. Resolved to `_id` at startup via GET /api/categories; omit to land in Inbox.                                            |
+| `label_names`               | `labelIds`         | Marvin label titles (case-insensitive exact match). Resolved to `_id` values at startup via GET /api/labels.                                           |
 | `auto_complete`             | `X-Auto-Complete`  | `true` (default): Marvin parses title operators; `false`: literal title. See [Autocomplete](#autocomplete).                                            |
 | `task.*`                    | addTask body       | Optional task fields (day, due_date, time_estimate_ms, priority, frog, etc.). See schema for config fields and Marvin API for addTask field semantics. |
 
@@ -230,7 +228,7 @@ The idempotency key uniquely identifies an issue or PR, not the action. We use `
 
 ### Config file structure
 
-The config file is YAML. Top-level keys: `version` (required), `filters` (optional), `webhook_server` (optional; required when any owner uses webhook), `github` (required), `marvin` (required). The full schema is defined in [docs/schema.yaml](schema.yaml). Config validation: [[[PLACEHOLDER]]] update when the config linter is defined.
+The config file is YAML. Top-level keys: `version` (required), `filters` (optional), `webhook_server` (optional; required when any owner uses webhook), `github` (required), `marvin` (required). The full schema is defined in [../internal/schema/schema.json](../internal/schema/schema.json) (auto-generated from Go structs in [../internal/config/config.go](../internal/config/config.go)). Config is validated at startup by the pipeline in [`internal/config/validate/`](../internal/config/validate/). A standalone `amgi validate` CLI is planned for CI integration (see [Roadmap](Roadmap.md)).
 
 ### Webhook server
 
@@ -453,8 +451,8 @@ github:
 marvin:
   configs:
     - id: issues-config
-      list_name: Inbox
-      label_names: [github]
+      # list_name omitted → task lands in Marvin's Inbox
+      label_names: [github]      # title of an existing Marvin label
       task:
         title_template: "{{.Type}} No. {{.Number}}: {{.Title}}"
         note_template: |
@@ -464,8 +462,8 @@ marvin:
           ---
           {{.Body}}
     - id: pr-config
-      list_name: Reviews
-      label_names: [github, pr]
+      list_name: "Reviews"                # title of a Marvin category
+      label_names: [github, pr]           # titles of Marvin labels
       task:
         title_template: "Review {{.Type}} No. {{.Number}} in {{.Owner}}/{{.Repo}}"
         note_template: |
@@ -519,7 +517,7 @@ When `mode` is `polling`, AMGI fetches issues and pull requests from the GitHub 
 AMGI sends these parameters with each request:
 
 - `state=open` — Only open issues/PRs (excludes closed).
-- `sort=created` — Order by creation time. (See D-043 for why not `updated`: polling's semantic is "first time seen = opened", and `sort=created` enables early-break during pagination since the server-side `since` filter is update-based.)
+- `sort=created` — Order by creation time (not `updated`). Polling's semantic is "first time seen = opened", which aligns with creation order. `sort=created` also enables early-break during pagination: once we see an item with `created_at < since`, all subsequent pages are older and can be skipped, whereas `sort=updated` would require walking every updated item (including old items bumped by recent comments) because the server-side `since` filter is update-based.
 - `direction=desc` — Newest first.
 - `per_page` (e.g. 100) — Items per page (GitHub allows up to 100).
 - `since` (ISO 8601) — Only items updated after this timestamp. AMGI uses this for incremental sync to detect first-time-seen items (equivalent to `opened` in webhook mode).
@@ -553,11 +551,19 @@ Base URL: `https://serv.amazingmarvin.com`. Source: [Marvin API wiki](https://gi
 | Purpose                | Endpoint          | Method |
 | ---------------------- | ----------------- | ------ |
 | Create task            | `/api/addTask`    | POST   |
-| Resolve list by name   | `/api/categories` | GET    |
-| Resolve labels by name | `/api/labels`     | GET    |
+| List categories        | `/api/categories` | GET    |
+| List labels            | `/api/labels`     | GET    |
 | Test credentials       | `/api/test`       | POST   |
 
-When config uses `list_name` or `label_names`, AMGI calls `GET /api/categories` and `GET /api/labels` to resolve names to IDs before creating tasks.
+#### Name resolution
+
+AMGI's config uses human-readable Marvin titles (`list_name`, `label_names`) rather than opaque `_id` values. Resolution from title → `_id` happens client-side in the Marvin destination:
+
+- At startup, AMGI calls `GET /api/categories` and `GET /api/labels` once each (spaced by the 1-req-per-3-sec reads rate limit) and populates an in-memory cache keyed by lowercased title.
+- Every `list_name` and `label_names` reference in `marvin.configs` is validated against the cache at startup. Any reference that doesn't resolve causes AMGI to fail-fast with an error listing the missing name and the available titles.
+- At task-creation time, `AddTask` looks up the names in the cache and passes the resolved `_id` values as `parentId` and `labelIds`. Cache hits cost zero API reads.
+- On a cache miss (e.g., a new Marvin label was added after AMGI started), AMGI refreshes the relevant cache once and retries the lookup. If still missing, a typed `ListNotFoundError` or `LabelNotFoundError` is returned to the caller.
+- The cache is in-memory only — not persisted. An AMGI restart re-fetches. This is deliberate: the cache is derived state and restart is the simplest invalidation mechanism for operationally rare changes.
 
 #### Request shape
 
@@ -569,12 +575,12 @@ When config uses `list_name` or `label_names`, AMGI calls `GET /api/categories` 
 
 **Body**
 
-The addTask request body maps from the Marvin config and rendered templates. See [Data flow > Outbound](#outbound) for the mapping table. Config fields and their Marvin API equivalents (all in [schema](schema.yaml)):
+The addTask request body maps from the Marvin config and rendered templates. See [Data flow > Outbound](#outbound) for the mapping table. Config fields and their Marvin API equivalents (all in [../internal/schema/schema.json](../internal/schema/schema.json)):
 
 - `title_template` → `title`
 - `note_template` → `note`
-- `list_id` / `list_name` → `parentId`
-- `label_ids` / `label_names` → `labelIds`
+- `list_name` → `parentId` (resolved to `_id` at startup via GET /api/categories)
+- `label_names` → `labelIds` (resolved to `_id` values at startup via GET /api/labels)
 - `task.day` → `day`
 - `task.due_date` → `dueDate`
 - `task.start_date` → appended to title as operator when `auto_complete` is true (not a body field)
@@ -634,7 +640,6 @@ When processing many issues (e.g. initial sync or backlog), AMGI avoids exceedin
 
 - **GitHub:** List issues/PRs returns up to 100 items per page. AMGI uses pagination; few requests fetch many items. 5,000 requests/hour is sufficient for polling. On 403 (rate limit exceeded), AMGI backs off per `X-RateLimit-Reset` and retries.
 - **Marvin addTask:** Max 1 item per second. AMGI processes matched events sequentially and waits ≥1 second between each addTask call. A backlog of 100 issues thus takes at least ~100 seconds.
-- **Marvin reads (categories, labels):** Max 1 query per 3 seconds burst. AMGI caches resolved list and label IDs; resolution happens at startup or when config changes, not per task. If multiple GETs are needed, they are spaced by ≥3 seconds.
 
 #### Failure behavior
 
@@ -648,7 +653,7 @@ If Marvin addTask fails after filter match, AMGI retries (up to 3 attempts). If 
 
 **Retry flow**
 
-- Each incoming webhook triggers a retry pass before processing the new event. The retry pass queries `github_artifacts` for rows with `status = 'pending_retry'` and `retry_count < 3`.
+- A retry ticker runs every 60 seconds, independent of webhook or polling traffic. Each tick queries `github_artifacts` for rows with `status = 'pending_retry'` and `retry_count < 3`.
 - For each pending retry: attempt addTask. On success, mark as `processed`. On failure, increment `retry_count`.
 - When `retry_count` reaches 3: set status to `failed`. No further retries. Failed events are logged and remain in the database for manual inspection.
 - On addTask success for the current event: insert with status `processed`.
@@ -656,10 +661,7 @@ If Marvin addTask fails after filter match, AMGI retries (up to 3 attempts). If 
 
 ## State and idempotency
 
-_(Where we persist, what we store, how we prevent duplicates.)_
-
-- [ ] Store: SQLite (path, single-writer assumption if any)
-- [ ] Schema: main tables and key columns
+AMGI persists state to SQLite to preserve idempotency and polling cursors across restarts. One AMGI process per database file (single-writer).
 
 **github_artifacts**
 

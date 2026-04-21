@@ -8,5 +8,6 @@ import (
 )
 
 type MarvinAPI interface {
+	Initialize(ctx context.Context, cfg *config.Config) error
 	AddTask(ctx context.Context, marvinConfig *config.MarvinConfig, event *event.Event) error
 }

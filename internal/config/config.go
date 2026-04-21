@@ -101,8 +101,8 @@ type Owner struct {
 	Mode ModeType `json:"mode" yaml:"mode" jsonschema:"enum=webhook,enum=polling"`
 	// Actions restricts which webhook actions create tasks (ignored when Mode is polling). Omitted uses defaults.
 	Actions *EventActions `json:"actions,omitempty" yaml:"actions,omitempty"`
-	// PollingIntervalSeconds is the seconds between poll runs when Mode is polling.
-	PollingIntervalSeconds *int `json:"polling_interval_seconds,omitempty" yaml:"polling_interval_seconds,omitempty" jsonschema:"minimum=1"`
+	// PollingIntervalSeconds is the seconds between poll runs when Mode is polling. Minimum is 60 seconds to stay within GitHub's 5,000 req/hour rate limit when watching multiple repos.
+	PollingIntervalSeconds *int `json:"polling_interval_seconds,omitempty" yaml:"polling_interval_seconds,omitempty" jsonschema:"minimum=60"`
 	// MarvinConfigID selects the default marvin.configs entry for repos under this owner unless overridden per repository.
 	MarvinConfigID string `json:"marvin_config_id" yaml:"marvin_config_id"`
 	// Repositories lists repos to watch under this owner.
@@ -141,13 +141,9 @@ type Marvin struct {
 type MarvinConfig struct {
 	// ID uniquely identifies this config; github marvin_config_id fields reference it.
 	ID string `json:"id" yaml:"id"`
-	// ListID is the Marvin parent ID (category, project, or "unassigned" for Inbox). Takes precedence over ListName when both are set.
-	ListID string `json:"list_id,omitempty" yaml:"list_id,omitempty"`
-	// ListName is a category or project title resolved via the Marvin API (exact match). Ignored when ListID is set.
+	// ListName is the Marvin category/project title. AMGI resolves this to a Marvin _id at startup via GET /api/categories. Case-insensitive exact match. Omit to place the task in Marvin's Inbox.
 	ListName string `json:"list_name,omitempty" yaml:"list_name,omitempty"`
-	// LabelIDs are Marvin label IDs attached to every task created with this config.
-	LabelIDs []string `json:"label_ids,omitempty" yaml:"label_ids,omitempty"`
-	// LabelNames are Marvin label titles (exact match), resolved to IDs via the API.
+	// LabelNames are Marvin label titles (case-insensitive exact match) attached to created tasks. AMGI resolves these to _id values at startup via GET /api/labels.
 	LabelNames []string `json:"label_names,omitempty" yaml:"label_names,omitempty"`
 	// AutoComplete controls Marvin title autocomplete: when true, the title may use Marvin operators and wins over key-value task fields; when false, only templates and explicit task fields apply.
 	AutoComplete *bool `json:"auto_complete,omitempty" yaml:"auto_complete,omitempty" jsonschema:"default=true"`

@@ -56,11 +56,9 @@ github:
 marvin:
   configs:
     - id: default
-      list_id: list-abc123
-      label_ids:
-        - lbl-1
+      list_name: "Inbox"
       label_names:
-        - GitHub
+        - github
       auto_complete: true
       task:
         title_template: "{{.Issue.Title}}"
@@ -80,7 +78,10 @@ marvin:
         review_date: "2026-04-30"
 
     - id: docs
-      list_name: Documentation
+      list_name: "Documentation"
+      label_names:
+        - github
+        - docs
       auto_complete: false
       task:
         title_template: "[docs] {{.Issue.Title}}"

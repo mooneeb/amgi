@@ -53,12 +53,19 @@ func main() {
 	l.Info("Store created successfully")
 
 	marvin := marvin.New(l, &m, http.DefaultClient)
+	l.Info("Marvin client created successfully")
+
+	// Fetch Marvin categories + labels and validate every list_name / label_names
+	// reference in the config resolves to a real Marvin ID. Fail-fast at startup
+	// so misspelled names never silently produce ghost-labeled tasks.
+	initCtx, initCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	err = marvin.Initialize(initCtx, c)
+	initCancel()
 	if err != nil {
-		l.Error("Failed to create Marvin client", "error", err)
+		l.Error("Failed to initialize Marvin client", "error", err)
 		os.Exit(1)
 	}
-
-	l.Info("Marvin client created successfully")
+	l.Info("Marvin client initialized (categories + labels cached; config references validated)")
 
 	p := processor.New(l, c, store, marvin)
 

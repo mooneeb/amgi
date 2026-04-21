@@ -147,17 +147,8 @@
         "id": {
           "type": "string"
         },
-        "list_id": {
-          "type": "string"
-        },
         "list_name": {
           "type": "string"
-        },
-        "label_ids": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
         },
         "label_names": {
           "items": {
@@ -264,7 +255,7 @@
         },
         "polling_interval_seconds": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 60
         },
         "marvin_config_id": {
           "type": "string"
