@@ -44,7 +44,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design.
 
 ### Config
 
-Copy [`examples/config.yaml`](examples/config.yaml) and adjust the owner, repo, and Marvin template to match your setup:
+Pick an [example](examples/) that matches your use case (project-manager, software-engineer, or homemaker) and adjust the owner/repo names and Marvin `list_name`/`label_names` to match your setup:
 
 ```yaml
 version: "1"
@@ -71,7 +71,7 @@ go build -o amgi ./cmd/amgi
 
 export GITHUB_TOKEN="ghp_..."
 export MARVIN_API_TOKEN="..."
-export GITHUB_WEBHOOK_SECRET="dev-secret"    # required even in polling-only mode currently
+export GITHUB_WEBHOOK_SECRET="dev-secret"    # required for webhook mode
 export CONFIG_PATH="$(pwd)/config.yaml"
 export AMGI_DB_PATH="/var/lib/amgi/amgi.db"
 
@@ -108,17 +108,16 @@ AMGI validates webhook signatures with HMAC-SHA256. Invalid signatures are rejec
 
 ## Configuration reference
 
-- Full schema in [`internal/config/config.go`](internal/config/config.go) (Go structs with `jsonschema` tags).
-- JSON Schema at [`internal/schema/schema.json`](internal/schema/schema.json) (auto-generated).
-- Template variables and filter operators: [`docs/architecture.md`](docs/architecture.md#configuration).
-- Commented example: [`examples/config.yaml`](examples/config.yaml).
+- **User-facing reference:** [`docs/configuration.md`](docs/configuration.md) — every field, operator semantics, template variables, worked examples.
+- **Canonical schema:** [`internal/schema/schema.json`](internal/schema/schema.json) (auto-generated from [Go structs](internal/config/config.go)).
+- **Starter configs:** [`examples/project-manager.yaml`](examples/project-manager.yaml), [`examples/software-engineer.yaml`](examples/software-engineer.yaml), [`examples/homemaker.yaml`](examples/homemaker.yaml).
 
 ## Environment variables
 
 | Variable                  | Required when        | Purpose                                                |
 |---------------------------|----------------------|--------------------------------------------------------|
 | `GITHUB_TOKEN`            | any owner is polling | PAT for GitHub REST API                                |
-| `GITHUB_WEBHOOK_SECRET`   | always (currently)   | Verify webhook signatures (HMAC-SHA256)                |
+| `GITHUB_WEBHOOK_SECRET`   | any owner is webhook | Verify webhook signatures (HMAC-SHA256)                |
 | `MARVIN_API_TOKEN`        | always               | Create Marvin tasks                                    |
 | `CONFIG_PATH`             | optional             | Path to YAML config. Default: `/etc/amgi/config.yaml`  |
 | `AMGI_DB_PATH`            | optional             | SQLite path. Default: `/etc/amgi/amgi.db`              |

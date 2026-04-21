@@ -1,0 +1,46 @@
+# Homemaker / personal task-tracker config.
+#
+# Uses a private GitHub repo with Issues as a lightweight kanban board for
+# home tasks (repairs, appointments, shopping lists) and syncs each issue
+# to Marvin for scheduling and priority. Polling mode; no webhook setup
+# required.
+#
+# This example intentionally shows that AMGI isn't just for code — any
+# GitHub repo with Issues can feed Marvin. The labels and categories below
+# reflect a household workflow, not a dev workflow.
+#
+# Required environment variables:
+#   GITHUB_TOKEN           — GitHub PAT with `repo` scope (private repo supported)
+#   MARVIN_API_TOKEN       — Marvin API token
+#
+# See docs/configuration.md for the full field reference.
+
+version: "1"
+
+# Only sync issues the user has triaged with a specific home-task label.
+filters:
+  issues:
+    labels:
+      in: [shopping, appointment, maintenance, family]
+
+github:
+  owners:
+    - name: my-github-username
+      mode: polling
+      polling_interval_seconds: 1800    # 30 minutes — low-frequency tracker
+      marvin_config_id: home-tasks
+      repositories:
+        - name: home-tracker
+
+marvin:
+  configs:
+    - id: home-tasks
+      list_name: "Home"
+      label_names: [github]
+      task:
+        title_template: "{{.Title}}"
+        note_template: |
+          **Link:** {{.URL}}
+          **Labels:** {{range .Labels}}`{{.}}` {{end}}
+
+          {{.Body}}

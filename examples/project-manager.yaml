@@ -1,0 +1,70 @@
+# Project Manager config — SaaS product team.
+#
+# Watches the backend and frontend repos for customer-impact bugs and PR
+# review requests. Uses webhook mode for real-time delivery (requires a
+# publicly reachable HTTPS URL — either a direct public IP or a tunnel
+# like cloudflared).
+#
+# Required environment variables:
+#   GITHUB_WEBHOOK_SECRET  — shared secret for HMAC-SHA256 signature validation
+#   MARVIN_API_TOKEN       — Marvin API token
+#
+# See docs/configuration.md for the full field reference.
+
+version: "1"
+
+# Global filters — apply to every repo unless overridden at owner or repo level.
+# Only surface issues and PRs that need the PM's attention.
+filters:
+  issues:
+    labels:
+      in: [bug, customer-impact, priority-high]
+  pull_requests:
+    reviewers:
+      exists: true
+
+webhook_server:
+  port: 8080
+  path: /webhooks/github
+
+github:
+  owners:
+    - name: acme-corp
+      mode: webhook
+      marvin_config_id: customer-issues
+      actions:
+        issues: [opened, assigned]
+        pull_requests: [review_requested, assigned]
+      repositories:
+        - name: backend
+        - name: frontend
+          # Frontend PRs route to a different Marvin destination with its own template.
+          marvin_config_id: frontend-reviews
+
+marvin:
+  configs:
+    - id: customer-issues
+      list_name: "Customer Issues"      # Marvin category title — resolved to _id at startup
+      label_names: [github, needs-triage]
+      task:
+        title_template: "{{.Type}} #{{.Number}} ({{.Repo}}): {{.Title}}"
+        note_template: |
+          **Reported by:** {{.Author}}
+          **Labels:** {{range .Labels}}`{{.}}` {{end}}
+          **Link:** {{.URL}}
+
+          {{.Body}}
+        priority: 2                     # 0=none, 1=yellow, 2=orange, 3=red
+
+    - id: frontend-reviews
+      list_name: "Sprint Planning"
+      label_names: [github, review]
+      task:
+        title_template: "Review PR #{{.Number}}: {{.Title}}"
+        note_template: |
+          **Author:** {{.Author}}
+          **Branch:** {{.Branch}}
+          **Link:** {{.URL}}
+
+          {{.Body}}
+        time_estimate_ms: 1800000       # 30 minutes

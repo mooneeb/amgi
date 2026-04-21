@@ -1,0 +1,61 @@
+# Software Engineer config — individual contributor.
+#
+# Watches team repos for PR review requests and personal repos for any new
+# activity. Uses polling mode so no inbound HTTP is needed — runs on a laptop
+# or home lab without a public URL.
+#
+# Required environment variables:
+#   GITHUB_TOKEN           — GitHub PAT with `repo` or `public_repo` scope
+#   MARVIN_API_TOKEN       — Marvin API token
+#
+# See docs/configuration.md for the full field reference.
+
+version: "1"
+
+# Only care about PRs that have reviewers assigned (implies they're ready for review).
+filters:
+  pull_requests:
+    reviewers:
+      exists: true
+
+github:
+  owners:
+    # Team repos — busier, poll more often.
+    - name: acme-corp
+      mode: polling
+      polling_interval_seconds: 300     # 5 minutes (minimum is 60)
+      marvin_config_id: review-requests
+      repositories:
+        - name: api-service
+        - name: web-client
+
+    # Personal repos — quieter, poll less often.
+    - name: my-github-username
+      mode: polling
+      polling_interval_seconds: 900     # 15 minutes
+      marvin_config_id: personal
+      repositories:
+        - name: side-project
+        - name: dotfiles
+
+marvin:
+  configs:
+    - id: review-requests
+      list_name: "Code Reviews"
+      label_names: [github, review]
+      task:
+        title_template: "Review: {{.Title}} (#{{.Number}} in {{.Repo}})"
+        note_template: |
+          **Author:** {{.Author}}
+          **Branch:** {{.Branch}}
+          **Link:** {{.URL}}
+
+          {{.Body}}
+        time_estimate_ms: 1800000       # 30 minutes
+
+    - id: personal
+      # No list_name → task lands in Marvin's Inbox.
+      # No label_names → task has no labels attached.
+      task:
+        title_template: "{{.Type}} #{{.Number}}: {{.Title}}"
+        note_template: "{{.URL}}"
