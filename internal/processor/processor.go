@@ -184,13 +184,11 @@ func isEventMatch(
 	e *event.Event,
 ) (bool, error) {
 	matched := false
-	filters, err := resolve.ResolveFilters(cfg, owner, repo)
-	if err != nil {
-		return matched, fmt.Errorf("failed to resolve filters: %w", err)
-	}
+	filters := resolve.ResolveFilters(cfg, owner, repo)
 	if filters == nil {
 		return true, nil
 	}
+	var err error
 	switch et {
 	case event.EventTypeIssue:
 		matched, err = filter.IsIssueMatch(e, filters.Issues)

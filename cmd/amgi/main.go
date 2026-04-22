@@ -22,66 +22,91 @@ import (
 	"github.com/mooneeb/amgi/internal/store"
 )
 
-// The main function is the entry point and serves as the
-// Shepherd of AMGI. It is responsible for spinning up
-// four worker services in Go Routines required for
-// supporting Github Polling and Webhook and listening
-// to SIGINT and SIGTERM to gracefully shutdown the server.
+// main is the AMGI entrypoint. It constructs shared dependencies
+// (logger, store, Marvin client, processor), spawns per-worker
+// goroutines (webhook server, pollers, retry sweep), and blocks
+// on SIGINT/SIGTERM to trigger graceful shutdown.
 func main() {
-
 	l := logger.New()
-	m := os.Getenv("MARVIN_API_TOKEN")
-	if m == "" {
+
+	marvinToken := os.Getenv("MARVIN_API_TOKEN")
+	if marvinToken == "" {
 		l.Error("MARVIN_API_TOKEN is not set")
 		os.Exit(1)
 	}
 
 	c, err := loadConfig()
 	if err != nil {
-		l.Error("Failed to load config", "error", err)
+		l.Error("failed to load config", "error", err)
+		os.Exit(1)
+	}
+	l.Info("config loaded successfully")
+
+	// Validate all required env vars based on the resolved config shape
+	// before doing any network I/O. Fail-fast so missing secrets don't
+	// incur Marvin API calls for no reason.
+	webhookSecret := os.Getenv("GITHUB_WEBHOOK_SECRET")
+	if hasModeConfigured(c, config.ModeWebhook) && webhookSecret == "" {
+		l.Error("GITHUB_WEBHOOK_SECRET is not set (required for webhook mode)")
+		os.Exit(1)
+	}
+	ghToken := os.Getenv("GITHUB_TOKEN")
+	if hasModeConfigured(c, config.ModePolling) && ghToken == "" {
+		l.Error("GITHUB_TOKEN is not set (required for polling mode)")
 		os.Exit(1)
 	}
 
-	l.Info("Config loaded successfully")
-
-	store, err := store.New(l)
+	st, err := store.New(l)
 	if err != nil {
-		l.Error("Failed to create store", "error", err)
+		l.Error("failed to create store", "error", err)
 		os.Exit(1)
 	}
+	l.Info("store created successfully")
 
-	l.Info("Store created successfully")
-
-	marvin := marvin.New(l, &m, http.DefaultClient)
-	l.Info("Marvin client created successfully")
+	marvinHTTPClient := &http.Client{Timeout: 30 * time.Second}
+	marvinClient := marvin.New(l, &marvinToken, marvinHTTPClient)
+	l.Info("marvin client created successfully")
 
 	// Fetch Marvin categories + labels and validate every list_name / label_names
 	// reference in the config resolves to a real Marvin ID. Fail-fast at startup
 	// so misspelled names never silently produce ghost-labeled tasks.
 	initCtx, initCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	err = marvin.Initialize(initCtx, c)
+	err = marvinClient.Initialize(initCtx, c)
 	initCancel()
 	if err != nil {
-		l.Error("Failed to initialize Marvin client", "error", err)
+		l.Error("failed to initialize marvin client", "error", err)
 		os.Exit(1)
 	}
-	l.Info("Marvin client initialized (categories + labels cached; config references validated)")
+	l.Info("marvin client initialized (categories + labels cached; config references validated)")
 
-	p := processor.New(l, c, store, marvin)
-
-	l.Info("Processor created successfully")
+	proc := processor.New(l, c, st, marvinClient)
+	l.Info("processor created successfully")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var wg sync.WaitGroup
 
-	if hasWebhookModeConfigured(c) {
-		s := os.Getenv("GITHUB_WEBHOOK_SECRET")
-		if s == "" {
-			l.Error("GITHUB_WEBHOOK_SECRET is not set")
-			os.Exit(1)
+	// Boot summary: surface defaults that are about to take effect so operators
+	// can spot "match everything" or default-interval cases at startup instead
+	// of discovering them via log volume later.
+	for _, owner := range c.GitHub.Owners {
+		for _, repository := range owner.Repositories {
+			if resolve.ResolveFilters(c, &owner, &repository) == nil {
+				l.Info("no filters configured, matching all events",
+					"owner", owner.Name, "repo", repository.Name)
+			}
 		}
-		wh := webhook.New(l, s, c, p)
+	}
+
+	retryInterval := resolve.ResolveRetryInterval(c)
+	retrySource := "default"
+	if c.RetryIntervalSeconds != nil {
+		retrySource = "config"
+	}
+	l.Info("resolved retry sweep interval", "interval", retryInterval, "source", retrySource)
+
+	if hasModeConfigured(c, config.ModeWebhook) {
+		wh := webhook.New(l, webhookSecret, c, proc)
 		port := config.DefaultWebhookPort
 		path := config.DefaultWebhookPath
 		if c.WebhookServer != nil {
@@ -95,63 +120,70 @@ func main() {
 		mux := http.NewServeMux()
 		mux.HandleFunc(path, wh.Handler)
 
-		server := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: mux}
+		server := &http.Server{
+			Addr:              fmt.Sprintf(":%d", port),
+			Handler:           mux,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       120 * time.Second,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			l.Info("Starting AMGI Webhook Server", "path", path, "port", port)
-			err = server.ListenAndServe()
+			l.Info("starting webhook server", "path", path, "port", port)
+			err := server.ListenAndServe()
 			if err != nil && err != http.ErrServerClosed {
-				l.Error("Failed to start AMGI Server", "error", err)
+				l.Error("webhook server error", "error", err)
 			}
 		}()
 
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			<-ctx.Done()
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer shutdownCancel()
 			err := server.Shutdown(shutdownCtx)
 			if err != nil {
-				l.Error("Failed to shutdown AMGI Server", "error", err)
+				l.Error("webhook server shutdown failed", "error", err)
 			}
 		}()
 	}
 
-	if hasPollingModeConfigured(c) {
-		ghToken := os.Getenv("GITHUB_TOKEN")
-		if ghToken == "" {
-			l.Error("GITHUB_TOKEN is not set")
-			os.Exit(1)
-		}
+	if hasModeConfigured(c, config.ModePolling) {
 		ghClient := igithub.New(l, ghToken)
 
 		for _, owner := range c.GitHub.Owners {
-			itv, err := resolve.ResolvePollingInterval(&owner)
-			if err != nil {
-				l.Error("Failed to resolve polling interval", "error", err)
+			if !isPollingMode(&owner) {
 				continue
 			}
+			itv := resolve.ResolvePollingInterval(&owner)
+			pollSource := "default"
+			if owner.PollingIntervalSeconds != nil {
+				pollSource = "config"
+			}
+			l.Info("resolved polling interval", "owner", owner.Name, "interval", itv, "source", pollSource)
 			for _, repository := range owner.Repositories {
-				if isPollingMode(&owner) {
-					wg.Add(1)
-					go func(ownerName string, repoName string, interval time.Duration) {
-						defer wg.Done()
-						poller := polling.NewPoller(
-							l,
-							ghClient,
-							store,
-							p,
-							ownerName,
-							repoName,
-							interval,
-						)
-						err := poller.Run(ctx)
-						if err != nil {
-							l.Error("Failed to run poller", "error", err)
-							return
-						}
-					}(owner.Name, repository.Name, itv)
-				}
+				wg.Add(1)
+				go func(ownerName string, repoName string, interval time.Duration) {
+					defer wg.Done()
+					poller := polling.NewPoller(
+						l,
+						ghClient,
+						st,
+						proc,
+						ownerName,
+						repoName,
+						interval,
+					)
+					err := poller.Run(ctx)
+					if err != nil {
+						l.Error("poller run failed", "error", err)
+						return
+					}
+				}(owner.Name, repository.Name, itv)
 			}
 		}
 	}
@@ -159,9 +191,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// Retry-sweep cadence. Hard-coded at 60s for v1; see
-		// docs/Roadmap.md "Configurable retry sweep interval".
-		ticker := time.NewTicker(60 * time.Second)
+		ticker := time.NewTicker(retryInterval)
 		defer ticker.Stop()
 
 		for {
@@ -169,9 +199,9 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				err := p.RetryPending(ctx)
+				err := proc.RetryPending(ctx)
 				if err != nil {
-					l.Error("Failed to retry pending events", "error", err)
+					l.Error("retry sweep failed", "error", err)
 				}
 			}
 		}
@@ -181,21 +211,17 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
 	sig := <-sigCh
-
 	l.Info("received signal, shutting down", "signal", sig)
 
 	cancel()
 	wg.Wait()
-	l.Info("shut down sequence completed.")
+	l.Info("shutdown sequence completed")
 }
 
 func loadConfig() (*config.Config, error) {
-	var cfgPath string
-
-	if os.Getenv("CONFIG_PATH") != "" {
-		cfgPath = os.Getenv("CONFIG_PATH")
-	} else {
-		cfgPath = "/etc/amgi/config.yaml"
+	cfgPath := os.Getenv("CONFIG_PATH")
+	if cfgPath == "" {
+		cfgPath = config.DefaultConfigPath
 	}
 
 	c, err := validate.ParseAndValidateConfig(cfgPath)
@@ -206,18 +232,10 @@ func loadConfig() (*config.Config, error) {
 	return c, nil
 }
 
-func hasWebhookModeConfigured(cfg *config.Config) bool {
+// hasModeConfigured reports whether at least one owner in the config uses the given mode.
+func hasModeConfigured(cfg *config.Config, mode config.ModeType) bool {
 	for _, owner := range cfg.GitHub.Owners {
-		if owner.Mode == config.ModeWebhook {
-			return true
-		}
-	}
-	return false
-}
-
-func hasPollingModeConfigured(cfg *config.Config) bool {
-	for _, owner := range cfg.GitHub.Owners {
-		if owner.Mode == config.ModePolling {
+		if owner.Mode == mode {
 			return true
 		}
 	}

@@ -3,6 +3,8 @@ package config
 const (
 	DefaultWebhookPort            int    = 8080
 	DefaultWebhookPath            string = "/webhooks/github"
+	DefaultConfigPath             string = "/etc/amgi/config.yaml"
+	DefaultDBPath                 string = "/var/lib/amgi/amgi.db"
 	MarvinTitleAutoCompleteHeader string = "X-Auto-Complete"
 	MaxRetryAttempts              int    = 3
 )
@@ -15,6 +17,8 @@ type Config struct {
 	Filters *Filters `json:"filters,omitempty" yaml:"filters,omitempty"`
 	// WebhookServer is where AMGI listens for GitHub webhooks. Required when any owner uses webhook mode.
 	WebhookServer *WebhookServer `json:"webhook_server,omitempty" yaml:"webhook_server,omitempty"`
+	// RetryIntervalSeconds is how often the retry sweep ticks (in seconds) when draining pending_retry events. Minimum 60 seconds (any faster is wasted work under Marvin's 1/sec rate limit). Defaults to 300 (5 minutes) when omitted.
+	RetryIntervalSeconds *int `json:"retry_interval_seconds,omitempty" yaml:"retry_interval_seconds,omitempty" jsonschema:"default=300,minimum=60"`
 	// GitHub lists owners and repositories to watch.
 	GitHub GitHub `json:"github" yaml:"github"`
 	// Marvin holds named configs (lists, labels, templates) referenced by marvin_config_id.

@@ -17,6 +17,11 @@
         "webhook_server": {
           "$ref": "#/$defs/WebhookServer"
         },
+        "retry_interval_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "default": 300
+        },
         "github": {
           "$ref": "#/$defs/GitHub"
         },
