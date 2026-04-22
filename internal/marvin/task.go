@@ -15,12 +15,16 @@ import (
 )
 
 const (
+	// baseURL is the Marvin API root. Unexported and hardcoded by design:
+	// Marvin has exactly one production API URL. Tests inject via the
+	// struct field `baseURL`, not this constant.
 	baseURL = "https://serv.amazingmarvin.com"
-	// As per Marvin API rate limits documentation: https://github.com/amazingmarvin/MarvinAPI/wiki/Rate-limits
+	// defaultDailyMax is the per-account daily addTask cap documented at
+	// https://github.com/amazingmarvin/MarvinAPI/wiki/Rate-limits.
 	defaultDailyMax = 1440
 )
 
-// AddTaskRequest is the JSON body for POST /api/addTask (Marvin OpenAPI CreateTaskRequest).
+// addTaskRequest is the JSON body for POST /api/addTask (Marvin OpenAPI CreateTaskRequest).
 // Title autocomplete is controlled with the X-Auto-Complete HTTP header, not a JSON field.
 type addTaskRequest struct {
 	Title            string   `json:"title"`
@@ -54,14 +58,13 @@ type addTaskRequest struct {
 func (m *marvin) AddTask(
 	ctx context.Context,
 	marvinConfig *config.MarvinConfig,
-	event *event.Event,
+	e *event.Event,
 ) error {
-
 	// Render templates first — fails early with no API cost on bad templates.
 	title, note, err := renderTemplates(
 		marvinConfig.Task.TitleTemplate,
 		marvinConfig.Task.NoteTemplate,
-		event,
+		e,
 	)
 	if err != nil {
 		return fmt.Errorf("render templates: %w", err)
@@ -104,7 +107,9 @@ func (m *marvin) AddTask(
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("X-API-Token", *m.apiToken)
 
-	// auto-complete is set to true by default, so we only need to set it if it's false
+	// X-Auto-Complete defaults to true on Marvin's side when the header is
+	// absent. We always send it explicitly so our request shape doesn't
+	// depend on Marvin's server defaults remaining stable.
 	autoComplete := marvinConfig.AutoComplete == nil || *marvinConfig.AutoComplete
 	httpReq.Header.Set(config.MarvinTitleAutoCompleteHeader, strconv.FormatBool(autoComplete))
 

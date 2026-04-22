@@ -1,11 +1,11 @@
-# AMGI — Amazing Marvin ↔ GitHub Integration
+# AMGI — Amazing Marvin + GitHub Integration
 
 [![CI](https://github.com/mooneeb/amgi/actions/workflows/ci.yml/badge.svg)](https://github.com/mooneeb/amgi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**One-way sync of GitHub issues and pull requests into [Amazing Marvin](https://amazingmarvin.com/) tasks.** Self-hosted, config-driven, container-ready.
+**Create [Amazing Marvin](https://amazingmarvin.com/) tasks from GitHub issues and pull requests.** Self-hosted, config-driven, container-ready.
 
-> **Status:** Pre-1.0 (alpha). Feature-complete for the walking-skeleton scope; hardening is ongoing. See [Roadmap](docs/Roadmap.md).
+> **Status:** Pre-1.0 (alpha). Core features are in place; see [Roadmap](docs/Roadmap.md) for planned additions.
 
 ---
 
@@ -20,16 +20,14 @@
 
 You describe *which* issues and PRs you care about (labels, assignees, branches, authors) in a YAML config. AMGI watches GitHub, filters matching events, and creates a Marvin task for each new item. Idempotency keeps it from duplicating; a retry queue handles transient failures.
 
-AMGI is **one-way** (GitHub → Marvin). Marvin is the source of truth for your task state; GitHub is the source of truth for the work.
-
 ## Features
 
 - **Webhook and polling modes**, configurable per GitHub owner. Use webhooks for real time; polling when you can't expose a public URL.
 - **Three-level filter hierarchy** (repo → owner → global) with Kubernetes-style operators: `in`, `notIn`, `exists`, `doesNotExist`.
 - **Idempotency by `{owner}/{repo}#{number}`** — one task per issue/PR regardless of duplicate deliveries.
-- **Rate-limit-aware**: respects GitHub's `X-RateLimit-Reset`; enforces Marvin's 1/sec + 1440/day caps with a fixed-window daily counter.
+- **Rate-limit-aware**: backs off and retries on GitHub rate limits; enforces Marvin's 1/sec + 1440/day caps with a fixed-window daily counter.
 - **Retry pipeline** for transient Marvin failures, with permanent-error classification (400/401/404 → give up; 429/5xx → retry up to 3 times).
-- **Graceful shutdown** on SIGINT/SIGTERM — drains in-flight work, persists state, exits clean.
+- **Graceful shutdown** on SIGINT/SIGTERM — stops accepting new work, waits for in-flight operations to complete (10s grace for HTTP), exits clean.
 - **Single static binary** (17 MB distroless Docker image). No runtime dependencies.
 
 See [`docs/architecture.md`](docs/architecture.md) for the full design.
@@ -120,7 +118,7 @@ AMGI validates webhook signatures with HMAC-SHA256. Invalid signatures are rejec
 | `GITHUB_WEBHOOK_SECRET`   | any owner is webhook | Verify webhook signatures (HMAC-SHA256)                |
 | `MARVIN_API_TOKEN`        | always               | Create Marvin tasks                                    |
 | `CONFIG_PATH`             | optional             | Path to YAML config. Default: `/etc/amgi/config.yaml`  |
-| `AMGI_DB_PATH`            | optional             | SQLite path. Default: `/etc/amgi/amgi.db`              |
+| `AMGI_DB_PATH`            | optional             | SQLite path. Default: `/var/lib/amgi/amgi.db`          |
 
 ## Deployment notes
 
@@ -128,6 +126,16 @@ AMGI validates webhook signatures with HMAC-SHA256. Invalid signatures are rejec
 - **Mount the DB on a persistent volume.** The idempotency store survives restarts; losing it means you may re-create already-created tasks.
 - **Rate-limit budget.** Marvin allows 1440 task creations per UTC day. If you watch very high-traffic repos, factor that in.
 - **Logs are JSON via `log/slog`.** Feed them into any structured log aggregator.
+
+## Project principles
+
+AMGI's design is guided by five principles:
+
+- **Reliable sync** — Matching GitHub events become Marvin tasks consistently; the idempotency store ensures exactly one task per item, even across restarts and duplicate deliveries.
+- **Config-driven** — All behaviour (which events matter, where they land, how tasks are titled) lives in YAML, not code. Teams adapt AMGI without forking.
+- **Self-hosted and simple** — One binary, one container image, minimal external dependencies. Drop it into whatever infrastructure you already run.
+- **Real-time or periodic** — Webhook mode for low latency, polling mode when webhooks aren't feasible (firewalls, no public URL). Per-owner choice.
+- **Transparent and auditable** — Structured logs (JSON via `log/slog`), local state in SQLite. What synced and why is always inspectable.
 
 ## Contributing
 

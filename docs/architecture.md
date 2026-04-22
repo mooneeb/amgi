@@ -1,6 +1,6 @@
 # Amazing Marvin Github Integration Architecture
 
-This document describes in detail the Architecture AMGI syncs GitHub issues and pull requests to Amazing Marvin tasks.
+This document describes how AMGI creates Amazing Marvin tasks from GitHub issues and pull requests.
 
 ## System overview
 
@@ -531,9 +531,9 @@ AMGI supports pagination and fetches all pages until complete. After each poll, 
 - **Classic PAT:** `repo` (private repos) or `public_repo` (public repos only).
 - **Fine-grained PAT:** Repository permissions — Issues (Read-only), Pull requests (Read-only), Metadata (Read-only).
 
-#### Rate limits
+#### GitHub rate limits
 
-GitHub enforces rate limits (e.g. 5,000 requests/hour for authenticated requests). AMGI respects `X-RateLimit-*` headers. On 403 (rate limit exceeded), AMGI backs off and retries after the reset time. See [Error handling strategy](#error-handling-strategy) and [Rate limit compliance](#rate-limit-compliance).
+GitHub enforces rate limits (e.g. 5,000 requests/hour for authenticated requests). On a GitHub rate-limit response (403/429 surfaced as `*github.RateLimitError`), AMGI sleeps until the reset time carried on the error (capped at 5 minutes) and retries the request once. If it fails again, the error propagates and the poll cursor stays un-advanced — the next poll tick re-fetches the same range. See [Error handling strategy](#error-handling-strategy) and [Rate limit compliance](#rate-limit-compliance).
 
 #### Auth
 
@@ -553,7 +553,6 @@ Base URL: `https://serv.amazingmarvin.com`. Source: [Marvin API wiki](https://gi
 | Create task            | `/api/addTask`    | POST   |
 | List categories        | `/api/categories` | GET    |
 | List labels            | `/api/labels`     | GET    |
-| Test credentials       | `/api/test`       | POST   |
 
 #### Name resolution
 
@@ -605,7 +604,7 @@ Template variables and rendering are documented in [Configuration > Template syn
 
 When `X-Auto-Complete` is true (default), Marvin parses the title for operators (e.g. `+today`, `#Category`, `@label`) and resolves them to IDs. Use `X-Auto-Complete=false` to send the title literally. See [Keyboard shortcuts in Marvin](https://help.amazingmarvin.com/en/articles/4848263-keyboard-shortcuts-in-marvin#h_43115cf851) for the full list of keybindings; use false when you want to avoid Marvin interpreting characters in your template output.
 
-#### Rate limits and error handling
+#### Marvin rate limits and error handling
 
 **Marvin API rate limits** (from [MarvinAPI marvin-api.yaml](https://github.com/amazingmarvin/MarvinAPI/blob/main/marvin-api.yaml)):
 
@@ -617,10 +616,10 @@ See [Rate limit compliance](#rate-limit-compliance) for how AMGI respects these 
 
 **Error responses**
 
-| Status     | Behavior                                        |
-| ---------- | ----------------------------------------------- |
-| 429 or 5xx | Retry with exponential backoff (max 3 attempts) |
-| 401 or 400 | No retry; errors are logged                     |
+| Status     | Behavior                                                                   |
+| ---------- | -------------------------------------------------------------------------- |
+| 429 or 5xx | Retry on the configured retry interval (default 5 minutes); max 3 attempts |
+| 401 or 400 | No retry; errors are logged                                                |
 
 See [Error handling strategy](#error-handling-strategy).
 
@@ -628,17 +627,17 @@ See [Error handling strategy](#error-handling-strategy).
 
 #### Retries and backoff
 
-| Condition              | Behavior                                                           |
-| ---------------------- | ------------------------------------------------------------------ |
-| 5xx (GitHub or Marvin) | Retry with exponential backoff; max 3 attempts                     |
-| 429 (rate limit)       | Respect`Retry-After` if present; otherwise backoff; max 3 attempts |
-| 401, 400, 404          | No retry; log and fail                                             |
+| Condition                     | Behavior                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| Marvin 429 or 5xx             | Mark as `pending_retry`; sweep on retry interval (default 5 minutes); max 3 attempts |
+| GitHub 403/429 (rate-limited) | Sleep until reset time (capped 5 min); retry the request once; otherwise propagate   |
+| 401, 400, 404                 | No retry; log and fail                                                               |
 
 #### Rate limit compliance
 
 When processing many issues (e.g. initial sync or backlog), AMGI avoids exceeding limits by:
 
-- **GitHub:** List issues/PRs returns up to 100 items per page. AMGI uses pagination; few requests fetch many items. 5,000 requests/hour is sufficient for polling. On 403 (rate limit exceeded), AMGI backs off per `X-RateLimit-Reset` and retries.
+- **GitHub:** List issues/PRs returns up to 100 items per page. AMGI uses pagination; few requests fetch many items. 5,000 requests/hour is sufficient for polling. On `*github.RateLimitError` (typically 403/429), AMGI sleeps until the reset time carried on the error (capped at 5 minutes) and retries once.
 - **Marvin addTask:** Max 1 item per second. AMGI processes matched events sequentially and waits ≥1 second between each addTask call. A backlog of 100 issues thus takes at least ~100 seconds.
 
 #### Failure behavior
@@ -653,9 +652,10 @@ If Marvin addTask fails after filter match, AMGI retries (up to 3 attempts). If 
 
 **Retry flow**
 
-- A retry ticker runs every 60 seconds, independent of webhook or polling traffic. Each tick queries `github_artifacts` for rows with `status = 'pending_retry'` and `retry_count < 3`.
+- A retry ticker runs on the configured `retry_interval_seconds` (default 5 minutes), independent of webhook or polling traffic. Each tick queries `github_artifacts` for rows with `status = 'pending_retry'` and `retry_count < 3`.
 - For each pending retry: attempt addTask. On success, mark as `processed`. On failure, increment `retry_count`.
 - When `retry_count` reaches 3: set status to `failed`. No further retries. Failed events are logged and remain in the database for manual inspection.
+- When the failure is `DailyBudgetExceededError` (Marvin's 1440/day cap hit), AMGI does not increment `retry_count` — the budget resets at UTC midnight and tomorrow's retry gets a fresh attempt.
 - On addTask success for the current event: insert with status `processed`.
 - On addTask failure for the current event: insert with status `pending_retry`, `retry_count = 0`, and serialized `event_data` for future retries.
 

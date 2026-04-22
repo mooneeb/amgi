@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/mooneeb/amgi/internal/config"
 	"github.com/mooneeb/amgi/internal/event"
 	_ "modernc.org/sqlite"
 )
@@ -27,12 +28,9 @@ const (
 )
 
 func New(log *slog.Logger) (*Store, error) {
-	var path string
-
-	if os.Getenv("AMGI_DB_PATH") == "" {
-		path = "/etc/amgi/amgi.db"
-	} else {
-		path = os.Getenv("AMGI_DB_PATH")
+	path := os.Getenv("AMGI_DB_PATH")
+	if path == "" {
+		path = config.DefaultDBPath
 	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
