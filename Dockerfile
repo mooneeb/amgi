@@ -35,7 +35,7 @@ COPY --from=builder /amgi /amgi
 
 # Default Paths. Can be overridden at runtime with -e.
 ENV CONFIG_PATH=/etc/amgi/config.yaml
-ENV AMGI_DB_PATH=/etc/amgi/amgi.db
+ENV AMGI_DB_PATH=/var/lib/amgi/amgi.db
 
 # Documentation only (does NOT open the port).
 # Actual binding happens at `docker run -p 8080:8080 ...`

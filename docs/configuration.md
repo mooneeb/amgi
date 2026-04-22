@@ -27,14 +27,15 @@ catch operators most often.
 
 ## 1. Top-level structure
 
-A minimal AMGI config has five possible top-level keys. Three are required; two are conditional:
+A minimal AMGI config has six possible top-level keys:
 
 ```yaml
-version: "1"           # REQUIRED — schema version
-filters: {...}          # optional — global filter rules
-webhook_server: {...}   # required when any owner uses mode: webhook
-github: {...}           # REQUIRED — which owners/repos to watch
-marvin: {...}           # REQUIRED — Marvin destinations + task templates
+version: "1"                    # REQUIRED — schema version
+filters: {...}                   # optional — global filter rules
+webhook_server: {...}            # required when any owner uses mode: webhook
+retry_interval_seconds: 300      # optional — default 300 (5 minutes); minimum 60
+github: {...}                    # REQUIRED — which owners/repos to watch
+marvin: {...}                    # REQUIRED — Marvin destinations + task templates
 ```
 
 Config files are validated at startup. Invalid shapes (wrong types, missing required fields, extra unknown keys) are rejected loudly with a pointer to the offending location.
@@ -455,7 +456,7 @@ Secrets are never read from the config file. Always pass via environment variabl
 | `GITHUB_TOKEN`            | any owner is `polling`  | PAT for GitHub REST API (`repo` or `public_repo`). |
 | `GITHUB_WEBHOOK_SECRET`   | any owner is `webhook`  | HMAC-SHA256 signature validation.                  |
 | `CONFIG_PATH`             | optional                | Path to the config file. Default `/etc/amgi/config.yaml`. |
-| `AMGI_DB_PATH`            | optional                | SQLite path. Default `/etc/amgi/amgi.db`.          |
+| `AMGI_DB_PATH`            | optional                | SQLite path. Default `/var/lib/amgi/amgi.db`.      |
 
 AMGI fails fast at startup if a required secret is missing. No silent fallback to empty strings.
 
@@ -534,7 +535,27 @@ AMGI respects Marvin's published rate limits:
 | 1440 writes per day  | Custom fixed-window counter; `DailyBudgetExceededError` pushes events to retry. |
 | 1 read per 3 seconds | `readsLimiter.Wait` before every `/api/categories` and `/api/labels` fetch.  |
 
-For GitHub, the polling client reacts to rate limit headers and backs off per `X-RateLimit-Reset`. See [architecture.md](architecture.md#rate-limits-and-error-handling) for the full model.
+For GitHub, the polling client catches `*github.RateLimitError` and sleeps until the reset time carried on the error (capped at 5 minutes), then retries once. See [architecture.md](architecture.md#rate-limits-and-error-handling) for the full model.
+
+### 9.5 Retry sweep cadence
+
+Events that fail their first Marvin `addTask` attempt are recorded with status `pending_retry` and retried by a background sweep. The sweep interval is controlled by top-level `retry_interval_seconds`:
+
+```yaml
+retry_interval_seconds: 300   # default 300 (5 minutes); minimum 60
+```
+
+| Setting                                  | When it fires   | Effect                                                  |
+| ---------------------------------------- | --------------- | ------------------------------------------------------- |
+| `retry_interval_seconds: 60` (minimum)   | every 60s       | Fastest recovery for transient Marvin failures.         |
+| Omitted or `300` (default)               | every 5 min     | Reasonable balance for most workloads.                  |
+| `retry_interval_seconds: 1800`           | every 30 min    | Low log noise; slower recovery from transient outages.  |
+
+**Why the minimum is 60 seconds:** Marvin's 1 req/sec rate limit already blocks bursts inside a single sweep, so faster ticks deliver no throughput gain — just wasted DB reads when the pending queue is empty.
+
+**Retry cap:** each `pending_retry` row is attempted up to 3 times total. After the third failure, status flips to `failed` and the event is left in the database for manual inspection.
+
+**Daily budget interaction:** if the failure is a `DailyBudgetExceededError` (Marvin's 1440/day cap), `retry_count` is **not** incremented — the sweep keeps retrying every tick without consuming the 3-strike budget, and the event recovers automatically once the cap resets at UTC midnight.
 
 ---
 
