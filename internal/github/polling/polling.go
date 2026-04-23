@@ -8,7 +8,10 @@ import (
 
 func (p *Poller) Run(ctx context.Context) error {
 
-	p.tick(ctx)
+	if err := p.tick(ctx); err != nil {
+		p.logger.Error("poll tick failed",
+			"owner", p.owner, "repo", p.repo, "error", err)
+	}
 
 	ticker := time.NewTicker(p.interval)
 	defer ticker.Stop()
@@ -16,7 +19,10 @@ func (p *Poller) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ticker.C:
-			p.tick(ctx)
+			if err := p.tick(ctx); err != nil {
+				p.logger.Error("poll tick failed",
+					"owner", p.owner, "repo", p.repo, "error", err)
+			}
 		case <-ctx.Done():
 			p.logger.Info("poller stopped", "owner", p.owner, "repo", p.repo)
 			return nil

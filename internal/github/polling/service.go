@@ -1,17 +1,23 @@
 package polling
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
-	igithub "github.com/mooneeb/amgi/internal/github"
+	"github.com/mooneeb/amgi/internal/event"
 	"github.com/mooneeb/amgi/internal/processor/piface"
 	"github.com/mooneeb/amgi/internal/store"
 )
 
+type GitHubClient interface {
+	ListIssues(ctx context.Context, owner, repo string, since time.Time) ([]*event.Event, error)
+	ListPullRequests(ctx context.Context, owner, repo string, since time.Time) ([]*event.Event, error)
+}
+
 type Poller struct {
 	logger    *slog.Logger
-	ghClient  *igithub.Client
+	ghClient  GitHubClient
 	store     *store.Store
 	processor piface.ProcessorAPI
 	owner     string
@@ -21,7 +27,7 @@ type Poller struct {
 
 func NewPoller(
 	logger *slog.Logger,
-	ghClient *igithub.Client,
+	ghClient GitHubClient,
 	store *store.Store,
 	processor piface.ProcessorAPI,
 	owner string,
