@@ -10,6 +10,8 @@ import (
 	processorconstants "github.com/mooneeb/amgi/internal/processor/constants"
 )
 
+// ResolveOwner returns the first Owner stanza matching ownerName.
+// Use ResolveOwnerRepo when both the owner and repo are known.
 func ResolveOwner(
 	config *config.Config,
 	ownerName string,
@@ -32,6 +34,30 @@ func ResolveRepository(
 		}
 	}
 	return nil, fmt.Errorf("repository %s not found under owner %s", repoName, owner.Name)
+}
+
+// ResolveOwnerRepo returns the (Owner, Repository) pair matching ownerName
+// and repoName. The config may contain multiple Owner stanzas sharing the
+// same Name — for example, when a single GitHub owner runs different Modes
+// across different repos — in which case the stanza whose Repositories list
+// contains repoName is returned.
+//
+// Returns an error if no matching pair exists.
+func ResolveOwnerRepo(
+	cfg *config.Config,
+	ownerName, repoName string,
+) (*config.Owner, *config.Repository, error) {
+	for _, owner := range cfg.GitHub.Owners {
+		if owner.Name != ownerName {
+			continue
+		}
+		for _, repo := range owner.Repositories {
+			if repo.Name == repoName {
+				return &owner, &repo, nil
+			}
+		}
+	}
+	return nil, nil, fmt.Errorf("no owner %q with repo %q found in config", ownerName, repoName)
 }
 
 func ResolveActions(

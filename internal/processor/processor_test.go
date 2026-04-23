@@ -268,6 +268,27 @@ func TestProcess(t *testing.T) {
 			want: want{status: store.StoreStatusPendingRetry, exists: true, addTaskCalls: 1},
 		},
 		{
+			// A webhook or retry-sweep event may arrive for a repo this AMGI
+			// instance is not configured to track (stale webhook, config
+			// reshuffle). That's not a processing failure: Process must log
+			// a warning and return nil, with no AddTask call and no store
+			// write — matching how filter-miss and duplicate events are
+			// handled.
+			name: "owner/repo not in config — warn and skip, no store write, no AddTask",
+			makeConfig: func() *config.Config {
+				cfg := newTestConfig()
+				// Event targets "test-owner"/"test-repo"; rename the config's
+				// owner so the resolver can't find a match.
+				cfg.GitHub.Owners[0].Name = "someone-else"
+				return cfg
+			},
+			addTaskFunc: func(ctx context.Context, mc *config.MarvinConfig, e *event.Event) error {
+				t.Fatalf("AddTask should not be called when owner/repo not in config")
+				return nil
+			},
+			want: want{exists: false, addTaskCalls: 0},
+		},
+		{
 			name: "filter miss — no store write, no AddTask",
 			makeConfig: func() *config.Config {
 				cfg := newTestConfig()
@@ -309,6 +330,82 @@ func TestProcess(t *testing.T) {
 				t.Errorf("row status = %q, want %q", row.status, tc.want.status)
 			}
 		})
+	}
+}
+
+// TestProcess_TwoStanzasSameOwnerName_RoutesByRepo is the end-to-end
+// regression guard for the ResolveOwnerRepo fix. A config with two Owner
+// stanzas sharing the same Name (typical shape for "one GitHub owner,
+// different modes per repo") must route an event to the stanza whose
+// Repositories list contains the event's repo — NOT to the first same-name
+// stanza (which was the bug).
+//
+// Scenario: owner "mooneeb" has two stanzas — webhook mode contains
+// "almaari", polling mode contains "xperiments". An event for the second
+// stanza's repo must resolve, match, and be stored as Processed.
+func TestProcess_TwoStanzasSameOwnerName_RoutesByRepo(t *testing.T) {
+	cfg := &config.Config{
+		Version: "1",
+		GitHub: config.GitHub{
+			Owners: []config.Owner{
+				{
+					Name:           "mooneeb",
+					Mode:           config.ModeWebhook,
+					MarvinConfigID: "default",
+					Repositories:   []config.Repository{{Name: "almaari"}},
+				},
+				{
+					Name:           "mooneeb",
+					Mode:           config.ModePolling,
+					MarvinConfigID: "default",
+					Repositories:   []config.Repository{{Name: "xperiments"}},
+				},
+			},
+		},
+		Marvin: config.Marvin{
+			Configs: []config.MarvinConfig{
+				{
+					ID: "default",
+					Task: config.MarvinTask{
+						TitleTemplate: "{{.Title}}",
+						NoteTemplate:  "{{.URL}}",
+					},
+				},
+			},
+		},
+	}
+
+	fake := &fakeMarvinAPI{
+		addTaskFunc: func(ctx context.Context, mc *config.MarvinConfig, e *event.Event) error {
+			return nil
+		},
+	}
+	p, s := newProcessor(t, cfg, fake)
+
+	// Event targets the SECOND stanza's repo. Before the fix, ResolveOwner
+	// would return the first (webhook) stanza, ResolveRepository would fail
+	// to find "xperiments" in its [almaari] list, and Process would return
+	// an error without ever calling AddTask or storing the event.
+	e := &event.Event{
+		Type:   string(event.EventTypeIssue),
+		Owner:  "mooneeb",
+		Repo:   "xperiments",
+		Number: 42,
+		Title:  "polled issue from second stanza",
+		Action: event.EventActionOpened,
+		Author: "mooneeb",
+	}
+
+	if err := p.Process(context.Background(), e); err != nil {
+		t.Fatalf("Process returned %v, want nil (second-stanza repo must resolve)", err)
+	}
+	if fake.addTaskCalls != 1 {
+		t.Errorf("AddTask calls = %d, want 1", fake.addTaskCalls)
+	}
+
+	row := readRow(t, s, e)
+	if row.status != store.StoreStatusProcessed {
+		t.Errorf("status = %q, want %q", row.status, store.StoreStatusProcessed)
 	}
 }
 

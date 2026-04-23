@@ -1,0 +1,26 @@
+# Schema-valid YAML but fails semantic validation: the (mooneeb, almaari)
+# (owner, repo) tuple appears in two Owner stanzas. Duplicate owner *names*
+# are legal (needed for multi-mode per owner), but a duplicate tuple is
+# ambiguous — the resolver cannot know which stanza's mode applies.
+version: "1"
+
+github:
+  owners:
+    - name: mooneeb
+      mode: webhook
+      marvin_config_id: default
+      repositories:
+        - name: almaari
+
+    - name: mooneeb
+      mode: polling
+      marvin_config_id: default
+      repositories:
+        - name: almaari
+
+marvin:
+  configs:
+    - id: default
+      task:
+        title_template: "{{.Title}}"
+        note_template: ""

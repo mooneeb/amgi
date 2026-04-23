@@ -115,6 +115,138 @@ func TestResolveRepository_EmptyOwner(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------------
+// ResolveOwnerRepo
+//
+// The reason this function exists on top of ResolveOwner + ResolveRepository:
+// when a single GitHub owner has repos that need different Modes
+// (webhook vs. polling), the canonical way to express that is two Owner
+// stanzas with the same Name. ResolveOwner returns only the first match by
+// name, so events for repos in the *second* stanza would resolve to the
+// wrong owner and fail repo lookup. ResolveOwnerRepo walks all matching-name
+// stanzas and returns the one whose Repositories list contains repoName.
+// -----------------------------------------------------------------------------
+
+func TestResolveOwnerRepo(t *testing.T) {
+	// Two stanzas share Name="mooneeb" but contain different repos with
+	// different modes — the canonical multi-mode-per-owner shape.
+	cfg := &config.Config{
+		GitHub: config.GitHub{
+			Owners: []config.Owner{
+				{
+					Name:         "mooneeb",
+					Mode:         config.ModeWebhook,
+					Repositories: []config.Repository{{Name: "almaari"}},
+				},
+				{
+					Name:         "mooneeb",
+					Mode:         config.ModePolling,
+					Repositories: []config.Repository{{Name: "xperiments"}},
+				},
+				{
+					Name:         "other-owner",
+					Mode:         config.ModeWebhook,
+					Repositories: []config.Repository{{Name: "other-repo"}},
+				},
+			},
+		},
+	}
+
+	cases := []struct {
+		name       string
+		ownerName  string
+		repoName   string
+		wantMode   config.ModeType
+		wantErr    bool
+		wantErrSub string // substring the error should contain (sanity check)
+	}{
+		{
+			name:      "repo in first stanza",
+			ownerName: "mooneeb",
+			repoName:  "almaari",
+			wantMode:  config.ModeWebhook,
+		},
+		{
+			// This is the case the first-match-wins bug would have broken:
+			// polled events for xperiments must resolve to the POLLING
+			// stanza, not the first same-name (webhook) stanza.
+			name:      "repo in second stanza (bug-fix regression guard)",
+			ownerName: "mooneeb",
+			repoName:  "xperiments",
+			wantMode:  config.ModePolling,
+		},
+		{
+			name:      "different owner, its repo",
+			ownerName: "other-owner",
+			repoName:  "other-repo",
+			wantMode:  config.ModeWebhook,
+		},
+		{
+			name:       "owner not found",
+			ownerName:  "missing-owner",
+			repoName:   "anything",
+			wantErr:    true,
+			wantErrSub: "missing-owner",
+		},
+		{
+			name: "owner found but repo not found in any matching stanza",
+			// "almaari" exists under mooneeb but not under other-owner; this
+			// lookup must fail, not silently return a wrong stanza.
+			ownerName:  "other-owner",
+			repoName:   "almaari",
+			wantErr:    true,
+			wantErrSub: "almaari",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			owner, repo, err := ResolveOwnerRepo(cfg, tc.ownerName, tc.repoName)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				if tc.wantErrSub != "" && !containsSubstring(err.Error(), tc.wantErrSub) {
+					t.Errorf("error %q does not contain %q", err.Error(), tc.wantErrSub)
+				}
+				return
+			}
+			if owner == nil || repo == nil {
+				t.Fatalf("got owner=%v repo=%v, want both non-nil", owner, repo)
+			}
+			if owner.Name != tc.ownerName {
+				t.Errorf("owner.Name = %q, want %q", owner.Name, tc.ownerName)
+			}
+			if repo.Name != tc.repoName {
+				t.Errorf("repo.Name = %q, want %q", repo.Name, tc.repoName)
+			}
+			if owner.Mode != tc.wantMode {
+				t.Errorf("owner.Mode = %q, want %q (stanza disambiguation failed)",
+					owner.Mode, tc.wantMode)
+			}
+		})
+	}
+}
+
+func TestResolveOwnerRepo_EmptyConfig(t *testing.T) {
+	cfg := &config.Config{}
+	_, _, err := ResolveOwnerRepo(cfg, "anything", "anything")
+	if err == nil {
+		t.Errorf("got nil error, want not-found error for empty Owners")
+	}
+}
+
+// containsSubstring is a tiny helper to keep the test free of strings package
+// noise — the check is a sanity assertion on error content, not a strict API.
+func containsSubstring(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+// -----------------------------------------------------------------------------
 // ResolveActions
 // -----------------------------------------------------------------------------
 

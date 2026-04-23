@@ -60,10 +60,14 @@ func (wh *webhook) Handler(
 
 	wh.logger.Info("Webhook received", "event", e)
 
-	owner, repo, err := resolveOwnerRepo(wh.config, e)
+	owner, repo, err := resolve.ResolveOwnerRepo(wh.config, e.Owner, e.Repo)
 	if err != nil {
+		// Not a failure: the webhook fired for a repo this AMGI instance
+		// isn't configured to track (stale webhook, config reshuffle, etc).
+		// Acknowledge to GitHub so no retry is scheduled, and continue.
 		w.WriteHeader(http.StatusOK)
-		wh.logger.Error("Failed to resolve owner and repo", "error", err)
+		wh.logger.Warn("event skipped: owner or repo not in config",
+			"owner", e.Owner, "repo", e.Repo, "error", err)
 		return
 	}
 
@@ -121,21 +125,6 @@ func normalizePayload(
 		return "", nil, fmt.Errorf("failed to parse payload: %w", err)
 	}
 	return et, e, nil
-}
-
-func resolveOwnerRepo(
-	cfg *config.Config,
-	e *event.Event,
-) (*config.Owner, *config.Repository, error) {
-	owner, err := resolve.ResolveOwner(cfg, e.Owner)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to resolve owner: %w", err)
-	}
-	repo, err := resolve.ResolveRepository(owner, e.Repo)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to resolve repository: %w", err)
-	}
-	return owner, repo, nil
 }
 
 func isActionAllowed(

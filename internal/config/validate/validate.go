@@ -39,7 +39,36 @@ func ParseAndValidateConfig(configPath string) (*config.Config, error) {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
+	if err := validateSemantics(c); err != nil {
+		return nil, err
+	}
+
 	return c, nil
+}
+
+// validateSemantics enforces cross-field rules that JSON Schema can't express.
+// Kept separate from the schema pass so error messages stay specific to the
+// rule rather than surfacing as opaque schema failures.
+//
+// Current rules:
+//  1. Each (ownerName, repoName) pair must appear at most once across all
+//     Owner stanzas. Duplicate owner names are LEGAL (needed to express "same
+//     GitHub owner, different mode per repo"), but a duplicate (owner, repo)
+//     tuple is ambiguous — the resolver would not know which stanza's mode,
+//     filters, or marvin_config_id applies.
+func validateSemantics(c *config.Config) error {
+	seen := make(map[[2]string]bool, 0)
+	for _, owner := range c.GitHub.Owners {
+		for _, repo := range owner.Repositories {
+			key := [2]string{owner.Name, repo.Name}
+			if seen[key] {
+				return fmt.Errorf("semantic validation failed: duplicate (owner=%q, repo=%q) pair across Owner stanzas — each (owner, repo) combination must be unique",
+					owner.Name, repo.Name)
+			}
+			seen[key] = true
+		}
+	}
+	return nil
 }
 
 // ValidateConfigSchema validates the config against the schema

@@ -18,9 +18,14 @@ func (p *processor) Process(
 	ctx context.Context,
 	e *event.Event,
 ) error {
-	owner, repo, err := resolveOwnerRepo(p.cfg, e)
+	owner, repo, err := resolve.ResolveOwnerRepo(p.cfg, e.Owner, e.Repo)
 	if err != nil {
-		return fmt.Errorf("failed to resolve owner and repo: %w", err)
+		// Not a processing failure: the event is for a repo we are not
+		// configured to track. Skip consistent with filter-miss and
+		// duplicate-event handling below (log and return nil).
+		p.logger.Warn("event skipped: owner or repo not in config",
+			"owner", e.Owner, "repo", e.Repo, "number", e.Number, "error", err)
+		return nil
 	}
 	matched, err := isEventMatch(p.cfg, owner, repo, event.EventType(e.Type), e)
 	if err != nil {
@@ -108,7 +113,7 @@ func (p *processor) RetryPending(
 	}
 	p.logger.Info("retry pass starting", "pending_retry_count", len(events))
 	for _, e := range events {
-		owner, repo, err := resolveOwnerRepo(p.cfg, e.Event)
+		owner, repo, err := resolve.ResolveOwnerRepo(p.cfg, e.Event.Owner, e.Event.Repo)
 		if err != nil {
 			p.logger.Warn("retry skipped: failed to resolve owner/repo",
 				"error", err, "owner", e.Event.Owner, "repo", e.Event.Repo, "number", e.Event.Number)
@@ -159,21 +164,6 @@ func (p *processor) RetryPending(
 		p.logger.Info("Event retried successfully", "owner", owner.Name, "repo", repo.Name, "number", e.Event.Number)
 	}
 	return nil
-}
-
-func resolveOwnerRepo(
-	cfg *config.Config,
-	e *event.Event,
-) (*config.Owner, *config.Repository, error) {
-	owner, err := resolve.ResolveOwner(cfg, e.Owner)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to resolve owner: %w", err)
-	}
-	repo, err := resolve.ResolveRepository(owner, e.Repo)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to resolve repository: %w", err)
-	}
-	return owner, repo, nil
 }
 
 func isEventMatch(

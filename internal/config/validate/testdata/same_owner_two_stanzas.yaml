@@ -1,0 +1,27 @@
+# Schema-valid AND semantically valid: same GitHub owner split into two
+# stanzas so different repos can run in different modes. This is the
+# canonical shape for "one GitHub account, webhook for repo A, polling for
+# repo B" setups and must be accepted by the validator.
+version: "1"
+
+github:
+  owners:
+    - name: mooneeb
+      mode: webhook
+      marvin_config_id: default
+      repositories:
+        - name: almaari
+
+    - name: mooneeb
+      mode: polling
+      polling_interval_seconds: 60
+      marvin_config_id: default
+      repositories:
+        - name: xperiments
+
+marvin:
+  configs:
+    - id: default
+      task:
+        title_template: "{{.Title}}"
+        note_template: ""
