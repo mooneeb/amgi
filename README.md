@@ -11,11 +11,11 @@
 
 ## What it does
 
-```
-┌──────────┐    webhook or poll     ┌──────┐   filter    ┌──────────┐   addTask   ┌────────┐
-│  GitHub  │ ─────────────────────► │ AMGI │ ──────────► │ dedupe/  │ ──────────► │ Marvin │
-│          │                        │      │             │ retry    │             │        │
-└──────────┘                        └──────┘             └──────────┘             └────────┘
+```mermaid
+flowchart LR
+    GitHub -->|webhook or poll| AMGI
+    AMGI -->|filter| Processing[dedupe / retry]
+    Processing -->|addTask| Marvin
 ```
 
 You describe *which* issues and PRs you care about (labels, assignees, branches, authors) in a YAML config. AMGI watches GitHub, filters matching events, and creates a Marvin task for each new item. Idempotency keeps it from duplicating; a retry queue handles transient failures.
