@@ -1,0 +1,57 @@
+# AMGI — Docker Compose deployment
+#
+# Starter-quality manifest for single-host self-hosting. Review the
+# "Tuning for production" section of docs/deploy-docker.md before
+# relying on defaults — this file deliberately omits healthcheck,
+# resource limits, and TLS termination, all of which are
+# environment-specific decisions tracked as Post-1.0 work in
+# docs/Roadmap.md section 2.3.
+#
+# Prerequisites:
+#   - Docker Engine 20.10+ and Docker Compose v2 (the `docker compose`
+#     subcommand; compose v1's `docker-compose` binary is EOL).
+#   - A `config.yaml` in the same directory as this file
+#     (see examples/config.yaml for a starter).
+#   - A `.env` file with GITHUB_TOKEN, GITHUB_WEBHOOK_SECRET,
+#     MARVIN_API_TOKEN. Copy .env.example → .env and fill in values.
+
+services:
+  amgi:
+    image: ghcr.io/mooneeb/amgi:latest
+    container_name: amgi
+    restart: unless-stopped
+
+    # Webhook server port. Map only if your config.yaml enables
+    # webhook_server; polling-only deployments can delete this block.
+    # For production, put AMGI behind a reverse proxy with TLS —
+    # do NOT expose :8080 to the public internet directly.
+    ports:
+      - "8080:8080"
+
+    volumes:
+      # Config file — bind-mounted read-only. Edit config.yaml on the
+      # host and restart the container (`docker compose restart amgi`)
+      # to pick up changes.
+      - ./config.yaml:/etc/amgi/config.yaml:ro
+
+      # SQLite database — named volume (docker-managed). Survives
+      # `docker compose down`; removed explicitly via
+      # `docker volume rm <project>_amgi-data`. Named volumes avoid
+      # host-UID permission mismatches (the image runs as UID 65532
+      # via distroless/static-debian12:nonroot).
+      - amgi-data:/var/lib/amgi
+
+    # Container environment. Compose interpolates ${VAR} from the
+    # .env file in this directory (auto-loaded) before passing to
+    # the container. Path overrides are explicit here (duplicating
+    # the Dockerfile ENV defaults) so the compose file is
+    # self-documenting for operators.
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
+      MARVIN_API_TOKEN: ${MARVIN_API_TOKEN}
+      CONFIG_PATH: /etc/amgi/config.yaml
+      AMGI_DB_PATH: /var/lib/amgi/amgi.db
+
+volumes:
+  amgi-data:

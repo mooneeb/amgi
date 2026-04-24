@@ -38,6 +38,9 @@ Work scoped for after the v1.0 release, grouped by theme.
 - **Schema migrations** — the SQLite file persists across deployments. Schema changes in a new AMGI release need migrations to run on startup. Planned shape: a `schema_version` table, embedded migration scripts (`001_initial.sql`, `002_add_column.sql`), in-order execution. Only needed once the schema actually changes.
 - **High availability** — today AMGI runs as a single replica (SQLite single-writer). Multiple replicas for failover would require a PostgreSQL backend option and shared-state coordination, with schema compatibility across backends.
 - **Multi-tenant webhook paths** — today AMGI uses a single webhook endpoint for all owners. A future option could allow per-owner paths (`/webhooks/acme`, `/webhooks/other-owner`) for isolation or routing. Most production deployments route by payload; this adds complexity and is deferred until a concrete need surfaces.
+- **Health/readiness endpoint** — AMGI has no `/healthz` or `/readyz` HTTP endpoint. Deployment manifests (compose, Kubernetes) can wire TCP probes on the webhook port today, but that's wrong for polling-only deployments (webhook server disabled). A dedicated endpoint would be mode-agnostic and support Kubernetes-style readiness + liveness semantics.
+- **Opinionated resource sizing** — deployment manifests ship as starter templates with no resource limits set. Publishing a sizing guide — benchmarked against realistic workloads (webhook QPS, polling interval × repo count) — is post-1.0 work. Until then, operators size empirically.
+- **Reverse-proxy / TLS reference manifests** — webhook deployments need TLS termination and HTTP routing in front of the AMGI container. Setup is environment-specific (Traefik, Caddy, nginx, Cloudflare Tunnel, etc.) and v1.0 leaves this to the operator. Shipping reference configurations (a docker-compose override for Traefik, a Kubernetes Ingress + cert-manager example) is post-1.0.
 
 ## 3. Explicitly out of scope
 
@@ -52,6 +55,9 @@ Positions AMGI has committed to, so users and contributors can calibrate expecta
 
 Current-release gaps, cross-referenced to the post-1.0 work that closes each:
 
-- **No Layer 3 semantic config validation** — invalid cross-field references (e.g., a `marvin_config_id` that points at no existing config) surface at runtime rather than startup. See [§ 2.1](#21-validation-completeness).
-- **No `amgi validate` CLI subcommand** — the validation library exists; the CLI wrapper does not. See [§ 2.1](#21-validation-completeness).
-- **Database rows are kept indefinitely** — no automatic retention or pruning of `github_artifacts`. A busy deployment will grow unbounded until the retention feature lands. See [§ 2.3](#23-operational-maturity).
+- **No Layer 3 semantic config validation** — invalid cross-field references (e.g., a `marvin_config_id` that points at no existing config) surface at runtime rather than startup. See [section 2.1](#21-validation-completeness).
+- **No `amgi validate` CLI subcommand** — the validation library exists; the CLI wrapper does not. See [section 2.1](#21-validation-completeness).
+- **Database rows are kept indefinitely** — no automatic retention or pruning of `github_artifacts`. A busy deployment will grow unbounded until the retention feature lands. See [section 2.3](#23-operational-maturity).
+- **No health/readiness HTTP endpoint** — TCP probes on the webhook port work for webhook-mode deployments only; polling-only deployments have no liveness signal beyond process existence. See [section 2.3](#23-operational-maturity).
+- **No published sizing guide** — deployment manifests ship as starter templates without resource limits; operators size empirically for v1.0. See [section 2.3](#23-operational-maturity).
+- **No shipped reverse-proxy / TLS reference manifests** — webhook deployments need an external reverse proxy or tunnel for TLS termination; configuration is left to the operator for v1.0. See [section 2.3](#23-operational-maturity).

@@ -109,7 +109,7 @@ func ResolveActions(
 // ResolveFilters walks the repo → owner → global hierarchy and returns the
 // first non-nil *config.Filters it finds, or nil if no level has filters. A
 // nil return means "no filters configured; match all events" per the
-// architecture (see docs/architecture.md §Filter engine).
+// architecture (see docs/architecture.md, section "Filter engine").
 func ResolveFilters(
 	config *config.Config,
 	owner *config.Owner,
