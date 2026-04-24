@@ -78,16 +78,18 @@ export AMGI_DB_PATH="/var/lib/amgi/amgi.db"
 
 ### Run with Docker
 
-```bash
-docker build -t amgi .
+For single-host self-hosting, use Docker Compose — see [`docs/deploy-docker.md`](docs/deploy-docker.md) for the full setup runbook.
 
+For a one-liner alternative (no compose file):
+
+```bash
 docker run --rm \
   -e GITHUB_TOKEN -e MARVIN_API_TOKEN -e GITHUB_WEBHOOK_SECRET \
   -v $(pwd)/config.yaml:/etc/amgi/config.yaml:ro \
   -v amgi-data:/var/lib/amgi \
   -e AMGI_DB_PATH=/var/lib/amgi/amgi.db \
   -p 8080:8080 \
-  amgi
+  ghcr.io/mooneeb/amgi:latest
 ```
 
 The webhook server listens on port 8080 by default; the `-p` flag maps it to your host. For polling-only deployments you can omit `-p`.
