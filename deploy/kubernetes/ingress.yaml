@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: amgi
+  labels:
+    app: amgi
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: amgi.example.com
+      http:
+        paths:
+          - path: /webhooks/github
+            pathType: Prefix
+            backend:
+              service:
+                name: amgi
+                port:
+                  name: webhook
+  tls:
+    - hosts:
+        - amgi.example.com
+      secretName: amgi-tls

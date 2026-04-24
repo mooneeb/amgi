@@ -1,6 +1,6 @@
 # AMGI — Docker Compose Deployment
 
-Docker Compose is the simplest way to run AMGI on a single host — a home lab, a small VPS, or a developer laptop. This guide covers setup, verification, day-to-day operations, and common troubleshooting. For broader project context see the [README](../README.md); for configuration details see [configuration.md](configuration.md).
+Docker Compose is the simplest way to run AMGI on a single host — a home lab, a small VPS, or a developer laptop. This guide covers setup, verification, day-to-day operations, and common troubleshooting. For broader project context see the [README](../../README.md); for configuration details see [configuration.md](../../docs/configuration.md).
 
 ## Prerequisites
 
@@ -19,27 +19,27 @@ A 10-minute happy-path setup. Every step assumes your working directory is the o
 ```bash
 # Clone the repository (simplest)
 git clone https://github.com/mooneeb/amgi.git
-cd amgi/deploy
+cd amgi/deploy/docker
 
 # Alternative — download just the two deployment files
 mkdir amgi && cd amgi
-curl -O https://raw.githubusercontent.com/mooneeb/amgi/main/deploy/docker-compose.yaml
-curl -O https://raw.githubusercontent.com/mooneeb/amgi/main/.env.example
+curl -O https://raw.githubusercontent.com/mooneeb/amgi/main/deploy/docker/docker-compose.yaml
+curl -O https://raw.githubusercontent.com/mooneeb/amgi/main/deploy/docker/.env.example
 ```
 
 ### 2. Create `config.yaml`
 
-AMGI needs a config file describing which GitHub owners/repos to sync and which Marvin configs to use. Copy one of the starters from [`examples/`](../examples/) and adapt it:
+AMGI needs a config file describing which GitHub owners/repos to sync and which Marvin configs to use. Copy one of the starters from [`examples/`](../../examples/) and adapt it:
 
 ```bash
-cp ../examples/minimal.yaml config.yaml
+cp ../../examples/minimal.yaml config.yaml
 # Open config.yaml in your editor and adapt it to your GitHub
 # owners/repos and Marvin configs.
 ```
 
 **This file must exist before you launch.** The compose file bind-mounts `./config.yaml` into the container; if the file is missing when `docker compose up` runs, Docker creates an empty *directory* at that path and AMGI fails on read.
 
-See [`docs/configuration.md`](configuration.md) for the full schema.
+See [`docs/configuration.md`](../../docs/configuration.md) for the full schema.
 
 ### 3. Create `.env`
 
@@ -81,15 +81,15 @@ Once you see `marvin client initialized` and whichever mode-specific readiness s
 
 AMGI's behavior is driven entirely by `config.yaml`. It defines which GitHub owners/repos to sync, which Marvin config (list + labels + task template) each owner maps to, and per-deployment options like polling intervals.
 
-- **Full schema reference:** [`docs/configuration.md`](configuration.md).
-- **Starter configs:** [`examples/`](../examples/) has persona-based starters.
+- **Full schema reference:** [`docs/configuration.md`](../../docs/configuration.md).
+- **Starter configs:** [`examples/`](../../examples/) has persona-based starters.
 - **Pick-up semantics:** AMGI reads `config.yaml` once at startup. Edit the file, then `docker compose restart amgi` to apply changes.
 
 ### Environment variables
 
 Secrets and path overrides are passed to the container via environment variables, loaded from the `.env` file in the working directory. Compose auto-loads `.env` before the container starts and interpolates `${VAR}` references in the compose file.
 
-See [`.env.example`](../.env.example) for each variable's purpose, format, and source.
+See [`.env.example`](.env.example) for each variable's purpose, format, and source.
 
 ## Verifying the deployment
 
@@ -183,7 +183,7 @@ docker compose down        # stop + remove container and network
 docker compose down -v     # also remove the named volume (ERASES SQLite state)
 ```
 
-The `-v` flag is destructive — it deletes the idempotency database and polling cursors. Next startup behaves like a fresh install (AMGI does not backfill historical GitHub items — see [configuration.md](configuration.md) for cursor semantics).
+The `-v` flag is destructive — it deletes the idempotency database and polling cursors. Next startup behaves like a fresh install (AMGI does not backfill historical GitHub items — see [configuration.md](../../docs/configuration.md) for cursor semantics).
 
 ## Troubleshooting
 

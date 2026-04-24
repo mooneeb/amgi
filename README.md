@@ -78,7 +78,7 @@ export AMGI_DB_PATH="/var/lib/amgi/amgi.db"
 
 ### Run with Docker
 
-For single-host self-hosting, use Docker Compose — see [`docs/deploy-docker.md`](docs/deploy-docker.md) for the full setup runbook.
+For single-host self-hosting, use Docker Compose — see [`deploy/docker/README.md`](deploy/docker/README.md) for the full setup runbook.
 
 For a one-liner alternative (no compose file):
 
@@ -93,6 +93,10 @@ docker run --rm \
 ```
 
 The webhook server listens on port 8080 by default; the `-p` flag maps it to your host. For polling-only deployments you can omit `-p`.
+
+### Run with Kubernetes
+
+For cluster deployments, starter manifests (Deployment, Service, Ingress, ConfigMap, Secret, PVC, kustomization) are in [`deploy/kubernetes/`](deploy/kubernetes/). See [`deploy/kubernetes/README.md`](deploy/kubernetes/README.md) for the full setup runbook covering customization, design decisions, and troubleshooting.
 
 ## Webhook setup (if using `mode: webhook`)
 

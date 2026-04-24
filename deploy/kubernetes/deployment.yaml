@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amgi
+  labels:
+    app: amgi
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: amgi
+  template:
+    metadata:
+      labels:
+        app: amgi
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: amgi
+          image: ghcr.io/mooneeb/amgi:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          envFrom:
+            - secretRef:
+                name: amgi-secrets
+          env:
+            - name: CONFIG_PATH
+              value: /etc/amgi/config.yaml
+            - name: AMGI_DB_PATH
+              value: /var/lib/amgi/amgi.db
+          ports:
+            - name: webhook
+              containerPort: 8080
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/amgi
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/amgi
+      volumes:
+        - name: config
+          configMap:
+            name: amgi-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: amgi-data
