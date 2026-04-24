@@ -109,19 +109,14 @@ This split exists because labels/assignees are naturally enumerable sets, while 
 
 Filters can be specified at three levels. Resolution is **most-specific-wins, no merging**:
 
-```
-┌──────────────────────────────────┐
-│  repo has filters?     → use repo's, STOP        │
-│         │ no                                     │
-│         ▼                                        │
-│  owner has filters?    → use owner's, STOP       │
-│         │ no                                     │
-│         ▼                                        │
-│  global has filters?   → use global's, STOP      │
-│         │ no                                     │
-│         ▼                                        │
-│  no filters defined   → match everything         │
-└──────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A{Repo has filters?} -->|yes| A1[Use repo's; STOP]
+    A -->|no| B{Owner has filters?}
+    B -->|yes| B1[Use owner's; STOP]
+    B -->|no| C{Global has filters?}
+    C -->|yes| C1[Use global's; STOP]
+    C -->|no| D[Match everything]
 ```
 
 **There is no merging between levels.** If a repo has `filters:` defined, the owner's and global filters are ignored entirely for that repo. This is deliberate — merging semantics are subtle (union? intersection? field-by-field?) and each choice surprises users differently.
@@ -480,25 +475,11 @@ Pick the closest match, adapt owner/repo names, and update the Marvin `list_name
 
 When AMGI starts, it makes two `GET` calls to Marvin — one to `/api/categories`, one to `/api/labels` — and caches the results in memory. The cache maps case-insensitive titles to Marvin `_id` values.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  AMGI start                                              │
-│       │                                                 │
-│       ▼                                                 │
-│  Initialize:                                            │
-│    GET /api/categories + GET /api/labels                │
-│    (2 API calls, ~3 sec spaced by the reads rate limit) │
-│    Validate every list_name/label_names in config       │
-│       │                                                 │
-│       ▼                                                 │
-│  Steady state (hours → weeks):                          │
-│    AddTask resolves from cache → ZERO API reads         │
-│       │                                                 │
-│       ▼                                                 │
-│  Cache miss (e.g., you added a new Marvin label today): │
-│    Refresh the cache once, retry the lookup              │
-│    (1 extra API read, ~200ms)                           │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Start[AMGI start] --> Init["Initialize<br/>GET /api/categories + GET /api/labels<br/>~3 sec, rate-limited reads<br/>Validate every list_name / label_names in config"]
+    Init --> Steady["Steady state (hours → weeks)<br/>AddTask resolves from cache<br/>ZERO API reads"]
+    Steady --> Miss["Cache miss (e.g., new Marvin label)<br/>Refresh cache once, retry lookup<br/>+1 API read, ~200ms"]
 ```
 
 The cache is **not persisted to disk**. Every AMGI restart re-fetches. This is intentional — restart is the natural way to pick up large-scale changes in Marvin.
