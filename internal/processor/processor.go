@@ -60,7 +60,8 @@ func (p *processor) Process(
 		}
 		p.logger.Info("task created",
 			"owner", owner.Name, "repo", repo.Name,
-			"number", e.Number, "type", e.Type)
+			"number", e.Number, "type", e.Type,
+			"mode", owner.Mode)
 		return nil
 	}
 
