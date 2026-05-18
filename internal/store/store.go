@@ -32,7 +32,21 @@ func New(log *slog.Logger) (*Store, error) {
 	if path == "" {
 		path = config.DefaultDBPath
 	}
-	db, err := sql.Open("sqlite", path)
+	// Build DSN with pragmas applied to every connection the pool opens.
+	//
+	//   busy_timeout=5000   Writers wait up to 5s for the lock instead of failing
+	//                       fast (default is 0 — return SQLITE_BUSY immediately).
+	//                       Required for the goroutine-per-repo poller pattern
+	//                       where many writes contend on each poll tick.
+	//   journal_mode=WAL    Improves reader/writer concurrency — readers no longer
+	//                       block on writers. Writers still serialize; busy_timeout
+	//                       handles writer/writer waits.
+	//
+	// modernc.org/sqlite supports DSN-level _pragma parameters that apply to every
+	// newly-opened connection, avoiding the pool-init trap of `db.Exec("PRAGMA ...")`
+	// only configuring one connection.
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
